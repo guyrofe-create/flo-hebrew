@@ -101,7 +101,7 @@ export default function DashboardScreen() {
   }, [ovulationDate, today]);
 
   return (
-    <View style={styles.container}>
+    <ScrollView style={styles.container} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
       <Text style={styles.appTitle}>Flo Hebrew</Text>
 
       {/* TODAY CARD */}
@@ -229,12 +229,14 @@ export default function DashboardScreen() {
           <Text style={[styles.linkBtnText, styles.dangerText]}>התחלה מחדש</Text>
         </Pressable>
       </View>
-    </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff', padding: 20 },
+  container: {},
+
+  content: { paddingBottom: 28 },
 
   appTitle: {
     fontSize: 18,

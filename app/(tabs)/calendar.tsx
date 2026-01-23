@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import DayModal from '../../components/DayModal';
 import { useUserData } from '../../context/UserDataContext';
 
@@ -206,7 +206,7 @@ export default function CalendarScreen() {
   }, [symptomsByDay, selectedKey]);
 
   return (
-    <View style={styles.container}>
+    <ScrollView style={styles.container} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
       <View style={styles.header}>
         <Pressable onPress={goPrevMonth} style={styles.navBtn}>
           <Text style={styles.navBtnText}>{'<'}</Text>
@@ -332,12 +332,14 @@ export default function CalendarScreen() {
         onStartPeriodToday={startPeriodToday}
         onEndPeriodToday={endPeriodToday}
       />
-    </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff', padding: 16 },
+  container: {},
+
+  content: { paddingBottom: 28 },
 
   header: {
     flexDirection: 'row',
