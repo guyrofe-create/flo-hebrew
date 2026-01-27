@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "flo-hebrew",
+    "name": "שולה",
     "slug": "flo-hebrew",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -16,8 +16,11 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.guyrofe.flohebrew",
+      "buildNumber": "12",
+      "icon": "./assets/images/icon.png",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "CFBundleDisplayName": "שולה"
       }
     },
     "android": {

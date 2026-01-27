@@ -1,57 +1,63 @@
 import React, { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import DayModal from '../../components/DayModal';
+import type { DaySymptoms } from '../../context/UserDataContext';
 import { useUserData } from '../../context/UserDataContext';
-
-function normalizeNoon(d: Date) {
-  const x = new Date(d);
-  x.setHours(12, 0, 0, 0);
-  return x;
-}
-
-function formatKey(d: Date) {
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
-  return `${yyyy}-${mm}-${dd}`;
-}
-
-function addDays(date: Date, days: number) {
-  const d = new Date(date);
-  d.setDate(d.getDate() + days);
-  return normalizeNoon(d);
-}
-
-function isoNoonFromKey(key: string) {
-  const [y, m, d] = key.split('-').map(Number);
-  const dt = new Date(y, (m || 1) - 1, d || 1);
-  dt.setHours(12, 0, 0, 0);
-  return dt.toISOString();
-}
+import { addDays, daysBetween, formatKey, isoNoonFromKey, normalizeNoon } from '../../lib/date';
 
 type MarkType = 'period' | 'fertile' | 'ovulation' | null;
 
-function dayDiff(a: Date, b: Date) {
-  const aa = normalizeNoon(a).getTime();
-  const bb = normalizeNoon(b).getTime();
-  return Math.round((aa - bb) / 86400000);
+function hasAnySymptoms(sym: DaySymptoms | undefined) {
+  if (!sym) return false;
+  return Boolean(
+    sym.flow ||
+      sym.pain ||
+      sym.mood ||
+      sym.discharge ||
+      typeof sym.sex === 'boolean' ||
+      sym.ovulationTest ||
+      (typeof sym.bbt === 'number' && Number.isFinite(sym.bbt)) ||
+      (sym.notes && String(sym.notes).trim().length > 0) ||
+      sym.photoUri
+  );
 }
 
-function hasAnySymptoms(sym: any) {
-  if (!sym || typeof sym !== 'object') return false;
-  const keys = Object.keys(sym);
-  if (keys.length === 0) return false;
+function isOvulationPositive(v: unknown) {
+  if (v === true) return true;
+  if (typeof v !== 'string') return false;
+  const s = v.trim().toLowerCase();
+  return s === 'positive' || s === 'pos' || s === 'true';
+}
 
-  if (sym.flow && sym.flow !== 'none') return true;
-  if (sym.pain && sym.pain !== 'none') return true;
-  if (sym.mood && sym.mood !== 'ok') return true;
-  if (sym.discharge && sym.discharge !== 'dry') return true;
-  if (sym.sex === true || sym.sex === false) return true;
-  if (sym.ovulationTest === 'positive' || sym.ovulationTest === 'negative') return true;
-  if (typeof sym.notes === 'string' && sym.notes.trim().length > 0) return true;
-  if (sym.photoUri) return true;
+function findLatestPositiveOvulationKeyInCurrentCycle(
+  symptomsByDay: Record<string, DaySymptoms>,
+  lastPeriodStart: Date | null,
+  cycleLength: number
+): string | null {
+  if (!lastPeriodStart || !cycleLength || cycleLength <= 0) return null;
 
-  return false;
+  const start = normalizeNoon(lastPeriodStart);
+  const end = normalizeNoon(addDays(start, cycleLength));
+
+  let bestKey: string | null = null;
+  let bestTime = -Infinity;
+
+  for (const key of Object.keys(symptomsByDay)) {
+    const sym = symptomsByDay[key];
+    if (!sym) continue;
+    if (!isOvulationPositive(sym.ovulationTest)) continue;
+
+    const d = normalizeNoon(new Date(isoNoonFromKey(key)));
+    if (Number.isNaN(d.getTime())) continue;
+    if (d.getTime() < start.getTime() || d.getTime() >= end.getTime()) continue;
+
+    if (d.getTime() > bestTime) {
+      bestTime = d.getTime();
+      bestKey = key;
+    }
+  }
+
+  return bestKey;
 }
 
 export default function CalendarScreen() {
@@ -69,6 +75,8 @@ export default function CalendarScreen() {
     symptomsByDay,
     setSymptomsForDay,
     clearSymptomsForDay,
+    advancedTracking,
+    setSelectedDayKey,
   } = useUserData();
 
   const today = useMemo(() => normalizeNoon(new Date()), []);
@@ -104,7 +112,7 @@ export default function CalendarScreen() {
     const start = new Date(month);
     start.setDate(1);
 
-    const firstWeekday = start.getDay(); // 0 Sun
+    const firstWeekday = start.getDay();
     const gridStart = addDays(start, -firstWeekday);
 
     const cells: Date[] = [];
@@ -116,8 +124,11 @@ export default function CalendarScreen() {
     const m = new Map<string, MarkType>();
     if (!lastPeriodStart || !cycleLength || cycleLength <= 0) return m;
 
+    const ovuIndexBase = Math.max(0, cycleLength - 14);
+
+    // בסיס לפי חישוב
     for (const d of daysGrid) {
-      const delta = dayDiff(d, lastPeriodStart);
+      const delta = daysBetween(d, lastPeriodStart);
       const mod = ((delta % cycleLength) + cycleLength) % cycleLength;
 
       const key = formatKey(d);
@@ -127,16 +138,12 @@ export default function CalendarScreen() {
         continue;
       }
 
-      const ovuIndex = Math.max(0, cycleLength - 14);
-      if (mod === ovuIndex) {
+      if (mod === ovuIndexBase) {
         m.set(key, 'ovulation');
         continue;
       }
 
-      if (
-        mod >= Math.max(0, ovuIndex - 4) &&
-        mod <= Math.min(cycleLength - 1, ovuIndex + 1)
-      ) {
+      if (mod >= Math.max(0, ovuIndexBase - 4) && mod <= Math.min(cycleLength - 1, ovuIndexBase + 1)) {
         m.set(key, 'fertile');
         continue;
       }
@@ -144,8 +151,32 @@ export default function CalendarScreen() {
       m.set(key, null);
     }
 
+    // דיוק לפי בדיקת ביוץ חיובית: מחפשים מתוך כל symptomsByDay במחזור הנוכחי
+    if (advancedTracking) {
+      const positiveKey = findLatestPositiveOvulationKeyInCurrentCycle(symptomsByDay, lastPeriodStart, cycleLength);
+
+      if (positiveKey) {
+        // מנקים רק fertile/ovulation שמגיעים מהחישוב
+        for (const d of daysGrid) {
+          const k = formatKey(d);
+          const curr = m.get(k);
+          if (curr === 'fertile' || curr === 'ovulation') m.set(k, null);
+        }
+
+        const ovuDate = normalizeNoon(new Date(isoNoonFromKey(positiveKey)));
+
+        for (const d of daysGrid) {
+          const k = formatKey(d);
+          const diff = daysBetween(normalizeNoon(d), ovuDate);
+
+          if (diff === 0) m.set(k, 'ovulation');
+          else if (diff >= -4 && diff <= 1) m.set(k, 'fertile');
+        }
+      }
+    }
+
     return m;
-  }, [lastPeriodStart, cycleLength, periodLength, daysGrid]);
+  }, [lastPeriodStart, cycleLength, periodLength, daysGrid, advancedTracking, symptomsByDay]);
 
   const goPrevMonth = () => {
     const d = new Date(month);
@@ -162,7 +193,9 @@ export default function CalendarScreen() {
   };
 
   const openDay = (day: Date) => {
-    setSelectedDay(normalizeNoon(day));
+    const noon = normalizeNoon(day);
+    setSelectedDay(noon);
+    setSelectedDayKey(formatKey(noon));
     setModalVisible(true);
   };
 
@@ -170,15 +203,8 @@ export default function CalendarScreen() {
     setModalVisible(false);
   };
 
-  const selectedKey = useMemo(
-    () => (selectedDay ? formatKey(selectedDay) : null),
-    [selectedDay]
-  );
-
-  const selectedIso = useMemo(
-    () => (selectedKey ? isoNoonFromKey(selectedKey) : null),
-    [selectedKey]
-  );
+  const selectedKey = useMemo(() => (selectedDay ? formatKey(selectedDay) : null), [selectedDay]);
+  const selectedIso = useMemo(() => (selectedKey ? isoNoonFromKey(selectedKey) : null), [selectedKey]);
 
   const selectedMark = useMemo<MarkType>(() => {
     if (!selectedKey) return null;
@@ -238,7 +264,7 @@ export default function CalendarScreen() {
           const iso = isoNoonFromKey(key);
           const isUserPeriodStart = periodSet.has(iso);
 
-          const sym = symptomsByDay[key];
+          const sym = symptomsByDay[key] as DaySymptoms | undefined;
           const showSymIcon = hasAnySymptoms(sym);
           const showPhotoIcon = !!sym?.photoUri;
 
@@ -256,9 +282,7 @@ export default function CalendarScreen() {
                 isUserPeriodStart && styles.cellUserMarked,
               ]}
             >
-              <Text style={[styles.cellText, !isInMonth && styles.cellTextOutMonth]}>
-                {d.getDate()}
-              </Text>
+              <Text style={[styles.cellText, !isInMonth && styles.cellTextOutMonth]}>{d.getDate()}</Text>
 
               {isUserPeriodStart && <View style={styles.userDot} />}
 
@@ -283,31 +307,40 @@ export default function CalendarScreen() {
           <View style={[styles.legendDot, styles.dotPeriod]} />
           <Text style={styles.legendText}>מחזור (חישוב)</Text>
         </View>
+
         <View style={styles.legendRow}>
           <View style={[styles.legendDot, styles.dotFertile]} />
           <Text style={styles.legendText}>חלון פוריות (חישוב)</Text>
         </View>
+
         <View style={styles.legendRow}>
           <View style={[styles.legendDot, styles.dotOvulation]} />
           <Text style={styles.legendText}>ביוץ משוער (חישוב)</Text>
         </View>
+
         <View style={styles.legendRow}>
           <View style={[styles.legendDot, styles.dotUser]} />
           <Text style={styles.legendText}>תחילת מחזור שהוזנה</Text>
         </View>
+
         <View style={styles.legendRow}>
           <Text style={styles.legendIcon}>✎</Text>
           <Text style={styles.legendText}>הוזנו סימפטומים</Text>
         </View>
+
         <View style={styles.legendRow}>
           <Text style={styles.legendIcon}>📷</Text>
           <Text style={styles.legendText}>הוזנה תמונה</Text>
         </View>
+
+        {advancedTracking && (
+          <Text style={styles.legendHint}>
+            מעקב מתקדם פעיל: אם תסומן בדיקת ביוץ positive ביום מסוים, הביוץ וחלון הפוריות יעודכנו סביב אותו יום.
+          </Text>
+        )}
       </View>
 
-      <Text style={styles.note}>
-        טיפ: לחצי על יום כדי לראות סיכום, להזין סימפטומים, להוסיף תמונה, או לסמן תחילת מחזור
-      </Text>
+      <Text style={styles.note}>טיפ: לחצי על יום כדי לראות סיכום, להזין סימפטומים, להוסיף תמונה, או לסמן תחילת מחזור</Text>
 
       <DayModal
         visible={modalVisible}
@@ -320,6 +353,7 @@ export default function CalendarScreen() {
         isToday={selectedIsToday}
         symptoms={selectedSymptoms as any}
         goal={goal}
+        advancedTracking={advancedTracking}
         onClose={closeDay}
         onAddPeriod={addPeriodDate}
         onRemovePeriod={removePeriodDate}
@@ -338,7 +372,6 @@ export default function CalendarScreen() {
 
 const styles = StyleSheet.create({
   container: {},
-
   content: { paddingBottom: 28 },
 
   header: {
@@ -460,6 +493,15 @@ const styles = StyleSheet.create({
   dotFertile: { backgroundColor: '#34c759' },
   dotOvulation: { backgroundColor: '#6a1b9a' },
   dotUser: { backgroundColor: '#111' },
+
+  legendHint: {
+    marginTop: 6,
+    fontSize: 11,
+    color: '#555',
+    writingDirection: 'rtl',
+    textAlign: 'right',
+    fontWeight: '700',
+  },
 
   note: {
     marginTop: 10,

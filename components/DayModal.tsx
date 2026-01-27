@@ -1,6 +1,7 @@
+// components/DayModal.tsx
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
     Alert,
     Linking,
@@ -14,38 +15,28 @@ import {
     View,
 } from 'react-native';
 
-type MarkType = 'period' | 'fertile' | 'ovulation' | null;
+import type { DaySymptoms } from '../context/UserDataContext';
+import { daysBetween, normalizeNoon } from '../lib/date';
 
-type DaySymptoms = {
-  flow?: 'none' | 'light' | 'medium' | 'heavy';
-  pain?: 'none' | 'mild' | 'moderate' | 'severe';
-  mood?: 'good' | 'ok' | 'low' | 'anxious';
-  discharge?: 'dry' | 'sticky' | 'creamy' | 'watery' | 'eggwhite';
-  sex?: boolean;
-  ovulationTest?: 'negative' | 'positive';
-  notes?: string;
-  photoUri?: string;
-};
+type MarkType = 'period' | 'fertile' | 'ovulation' | null;
 
 type Props = {
   visible: boolean;
   day: Date | null;
   dayKey: string | null;
   dayIso: string | null;
-
   mark: MarkType;
   isUserPeriodStart: boolean;
   isFuture: boolean;
   isToday: boolean;
-
   symptoms: DaySymptoms;
   goal: string | null;
 
   lastPeriodStartIso: string | null;
   cycleLength: number;
   periodLength: number;
-
   isPeriodActive: boolean;
+
   onStartPeriodToday: () => Promise<void>;
   onEndPeriodToday: () => Promise<void>;
 
@@ -56,19 +47,10 @@ type Props = {
 
   onSetSymptoms: (dayKey: string, patch: DaySymptoms) => Promise<void>;
   onClearSymptoms: (dayKey: string) => Promise<void>;
+
+  // חדש: מציג אפשרויות מתקדמות רק כשמופעל
+  advancedTracking?: boolean;
 };
-
-function normalizeNoon(d: Date) {
-  const x = new Date(d);
-  x.setHours(12, 0, 0, 0);
-  return x;
-}
-
-function daysBetween(a: Date, b: Date) {
-  const aa = normalizeNoon(a).getTime();
-  const bb = normalizeNoon(b).getTime();
-  return Math.round((aa - bb) / 86400000);
-}
 
 function confirmAsync(title: string, message: string, okText = 'להמשיך', cancelText = 'ביטול') {
   return new Promise<boolean>(resolve => {
@@ -88,11 +70,25 @@ function badgeLabel(mark: MarkType) {
 
 function goalKind(goal: string | null) {
   if (!goal) return 'general' as const;
-  if (goal === 'להיכנס להריון') return 'trying' as const;
-  if (goal === 'הריון פעיל') return 'pregnant' as const;
-  if (goal === 'מעקב אחרי מחזור') return 'tracking' as const;
-  if (goal === 'שמירה על הבריאות הכללית') return 'general' as const;
-  return 'general' as const;
+  switch (goal) {
+    case 'conceive':
+      return 'trying';
+    case 'prevent':
+    case 'track':
+      return 'tracking';
+
+    // legacy
+    case 'pregnancy':
+    case 'להיכנס להריון':
+      return 'trying';
+    case 'avoid':
+    case 'למנוע הריון':
+    case 'מעקב כללי':
+      return 'tracking';
+
+    default:
+      return 'general';
+  }
 }
 
 function labelFlow(v: DaySymptoms['flow']) {
@@ -119,21 +115,22 @@ function labelMood(v: DaySymptoms['mood']) {
   return null;
 }
 
-function smartSummary(params: {
-  mark: MarkType;
-  isFuture: boolean;
-  goal: string | null;
-  symptoms: DaySymptoms;
-}) {
+function labelDischarge(v: DaySymptoms['discharge']) {
+  if (v === 'dry') return 'יובש';
+  if (v === 'sticky') return 'דביק';
+  if (v === 'creamy') return 'קרמי';
+  if (v === 'watery') return 'מימי';
+  if (v === 'eggwhite') return 'כמו חלבון ביצה';
+  return null;
+}
+
+function smartSummary(params: { mark: MarkType; isFuture: boolean; goal: string | null; symptoms: DaySymptoms }) {
   const { mark, isFuture, goal, symptoms } = params;
   const g = goalKind(goal);
 
   if (isFuture) {
     if (g === 'trying' && (mark === 'fertile' || mark === 'ovulation')) {
       return 'תחזית: חלון פוריות או ביוץ משוער. אפשר להיערך מראש. אפשר להזין סימפטומים, אבל לא מסמנים תחילת מחזור בעתיד.';
-    }
-    if (g === 'pregnant') {
-      return 'זה תאריך עתידי. בהריון התחזיות במחזור פחות רלוונטיות, אבל אפשר להזין סימפטומים והערות.';
     }
     return 'זה תאריך עתידי. אפשר להזין סימפטומים והערות, אבל תחילת מחזור לא מסמנים בעתיד.';
   }
@@ -142,13 +139,21 @@ function smartSummary(params: {
   const f = labelFlow(symptoms.flow);
   const p = labelPain(symptoms.pain);
   const m = labelMood(symptoms.mood);
+  const d = labelDischarge(symptoms.discharge);
+
   if (f) parts.push(f);
   if (p) parts.push(p);
   if (m) parts.push(m);
+  if (d) parts.push(`הפרשה: ${d}`);
+
   if (symptoms.ovulationTest === 'positive') parts.push('בדיקת ביוץ חיובית');
   if (symptoms.ovulationTest === 'negative') parts.push('בדיקת ביוץ שלילית');
+
+  if (typeof symptoms.bbt === 'number') parts.push(`חום בסיסי: ${symptoms.bbt.toFixed(1)}°C`);
+
   if (symptoms.sex === true) parts.push('הוזנו יחסים');
   if (symptoms.sex === false) parts.push('סומן ללא יחסים');
+
   if (symptoms.photoUri) parts.push('צורפה תמונה');
 
   const symptomLine = parts.length > 0 ? `הוזן: ${parts.join(', ')}.` : null;
@@ -172,12 +177,6 @@ function smartSummary(params: {
     return [symptomLine, 'אפשר להזין סימפטומים ולסמן תחילת מחזור אם רלוונטי.'].filter(Boolean).join(' ');
   }
 
-  if (g === 'pregnant') {
-    return [symptomLine, 'מומלץ להשתמש בהזנת סימפטומים והערות, ופחות להסתמך על חיזויי מחזור.']
-      .filter(Boolean)
-      .join(' ');
-  }
-
   if (g === 'tracking') {
     if (mark === 'period') return [symptomLine, 'יום שמסומן כמחזור לפי חישוב.'].filter(Boolean).join(' ');
     if (mark === 'ovulation') return [symptomLine, 'ביוץ משוער לפי חישוב.'].filter(Boolean).join(' ');
@@ -199,6 +198,7 @@ function OptionRow<T extends string>(props: {
   return (
     <View style={styles.block}>
       <Text style={styles.blockTitle}>{title}</Text>
+
       <View style={styles.optionsRow}>
         {options.map(opt => {
           const active = value === opt.value;
@@ -212,6 +212,38 @@ function OptionRow<T extends string>(props: {
             </Pressable>
           );
         })}
+      </View>
+    </View>
+  );
+}
+
+function TernaryRow(props: {
+  title: string;
+  value: boolean | undefined;
+  onChange: (v: boolean | undefined) => void;
+  labels?: { unknown: string; yes: string; no: string };
+}) {
+  const { title, value, onChange } = props;
+  const labels = props.labels || { unknown: 'לא יודע', yes: 'כן', no: 'לא' };
+
+  return (
+    <View style={styles.block}>
+      <Text style={styles.blockTitle}>{title}</Text>
+      <View style={styles.optionsRow}>
+        <Pressable
+          onPress={() => onChange(undefined)}
+          style={[styles.optBtn, value === undefined && styles.optBtnActive]}
+        >
+          <Text style={[styles.optText, value === undefined && styles.optTextActive]}>{labels.unknown}</Text>
+        </Pressable>
+
+        <Pressable onPress={() => onChange(true)} style={[styles.optBtn, value === true && styles.optBtnActive]}>
+          <Text style={[styles.optText, value === true && styles.optTextActive]}>{labels.yes}</Text>
+        </Pressable>
+
+        <Pressable onPress={() => onChange(false)} style={[styles.optBtn, value === false && styles.optBtnActive]}>
+          <Text style={[styles.optText, value === false && styles.optTextActive]}>{labels.no}</Text>
+        </Pressable>
       </View>
     </View>
   );
@@ -236,7 +268,20 @@ export default function DayModal(props: Props) {
     onClearSymptoms,
   } = props;
 
+  const advancedTracking = !!props.advancedTracking;
+
   const [localNotes, setLocalNotes] = useState<string>(symptoms.notes || '');
+  const [localBbt, setLocalBbt] = useState<string>(
+    typeof symptoms.bbt === 'number' && Number.isFinite(symptoms.bbt) ? String(symptoms.bbt) : ''
+  );
+
+  useEffect(() => {
+    setLocalNotes(symptoms.notes || '');
+  }, [dayKey, symptoms.notes]);
+
+  useEffect(() => {
+    setLocalBbt(typeof symptoms.bbt === 'number' && Number.isFinite(symptoms.bbt) ? String(symptoms.bbt) : '');
+  }, [dayKey, symptoms.bbt]);
 
   const title = useMemo(() => {
     if (!day) return '';
@@ -244,24 +289,19 @@ export default function DayModal(props: Props) {
   }, [day]);
 
   const badge = useMemo(() => badgeLabel(mark), [mark]);
+  const summary = useMemo(() => smartSummary({ mark, isFuture, goal, symptoms }), [mark, isFuture, goal, symptoms]);
 
-  const summary = useMemo(() => {
-    return smartSummary({ mark, isFuture, goal, symptoms });
-  }, [mark, isFuture, goal, symptoms]);
-
-  const lastStart = useMemo(() => {
-    return props.lastPeriodStartIso ? normalizeNoon(new Date(props.lastPeriodStartIso)) : null;
-  }, [props.lastPeriodStartIso]);
+  const lastStart = useMemo(
+    () => (props.lastPeriodStartIso ? normalizeNoon(new Date(props.lastPeriodStartIso)) : null),
+    [props.lastPeriodStartIso]
+  );
 
   const dayStats = useMemo(() => {
     if (!day || !lastStart || !props.cycleLength || props.cycleLength <= 0) return null;
-
     const delta = daysBetween(day, lastStart);
     const cycleDay = delta + 1;
-
     const mod = ((delta % props.cycleLength) + props.cycleLength) % props.cycleLength;
     const daysToNextPeriod = props.cycleLength - mod;
-
     return { cycleDay, daysToNextPeriod };
   }, [day, lastStart, props.cycleLength]);
 
@@ -275,38 +315,23 @@ export default function DayModal(props: Props) {
   const handleAddPeriod = async () => {
     if (!dayIso) return;
     if (!canMarkPeriodStart) return;
-
     const msg = isToday ? 'לסמן את היום כתחילת מחזור?' : 'לסמן את התאריך כתחילת מחזור (עבר)?';
-
     Alert.alert('תחילת מחזור', msg, [
       { text: 'ביטול', style: 'cancel' },
-      {
-        text: 'סמני',
-        onPress: async () => {
-          await onAddPeriod(dayIso);
-        },
-      },
+      { text: 'סמני', onPress: async () => onAddPeriod(dayIso) },
     ]);
   };
 
   const handleRemovePeriod = async () => {
     if (!dayIso) return;
-
     Alert.alert('הסרת תאריך מחזור', 'להסיר את התאריך מההיסטוריה?', [
       { text: 'ביטול', style: 'cancel' },
-      {
-        text: 'הסר',
-        style: 'destructive',
-        onPress: async () => {
-          await onRemovePeriod(dayIso);
-        },
-      },
+      { text: 'הסר', style: 'destructive', onPress: async () => onRemovePeriod(dayIso) },
     ]);
   };
 
   const handleClearSymptoms = async () => {
     if (!dayKey) return;
-
     Alert.alert('ניקוי סימפטומים', 'למחוק את כל הסימפטומים וההערות של היום הזה?', [
       { text: 'ביטול', style: 'cancel' },
       {
@@ -315,6 +340,7 @@ export default function DayModal(props: Props) {
         onPress: async () => {
           await onClearSymptoms(dayKey);
           setLocalNotes('');
+          setLocalBbt('');
         },
       },
     ]);
@@ -325,23 +351,42 @@ export default function DayModal(props: Props) {
     await onSetSymptoms(dayKey, { notes: localNotes });
   };
 
+  const handleSaveBbt = async () => {
+    if (!dayKey) return;
+
+    const raw = localBbt.trim().replace(',', '.');
+    if (!raw) {
+      await onSetSymptoms(dayKey, { bbt: undefined });
+      return;
+    }
+
+    const num = Number(raw);
+    if (!Number.isFinite(num)) {
+      Alert.alert('חום בסיסי', 'אנא הזיני מספר תקין (לדוגמה 36.6).');
+      return;
+    }
+
+    // טווח סביר בסיסי, אפשר לשנות בהמשך
+    if (num < 34 || num > 40) {
+      Alert.alert('חום בסיסי', 'הערך נראה לא סביר. בדקי והזיני שוב.');
+      return;
+    }
+
+    await onSetSymptoms(dayKey, { bbt: Number(num.toFixed(1)) });
+  };
+
   const pickPhoto = async () => {
     if (!dayKey) return;
 
     if (isFuture) {
-      const ok = await confirmAsync(
-        'תמונה',
-        'אפשר לצרף תמונה גם לתאריך עתידי, אבל זה בעיקר כתזכורת. להמשיך?'
-      );
+      const ok = await confirmAsync('תמונה', 'אפשר לצרף תמונה גם לתאריך עתידי, אבל זה בעיקר כתזכורת. להמשיך?');
       if (!ok) return;
     }
 
     try {
       const perm = await ImagePicker.getMediaLibraryPermissionsAsync();
-
       if (!perm.granted) {
         const req = await ImagePicker.requestMediaLibraryPermissionsAsync();
-
         if (!req.granted) {
           const canOpenSettings = Platform.OS === 'ios' || Platform.OS === 'android';
           Alert.alert(
@@ -425,19 +470,28 @@ export default function DayModal(props: Props) {
                   <Text style={styles.badgeText}>{badge}</Text>
                 </View>
               )}
+
               {isToday && (
                 <View style={[styles.badge, styles.badgeToday]}>
                   <Text style={styles.badgeText}>היום</Text>
                 </View>
               )}
+
               {isFuture && (
                 <View style={[styles.badge, styles.badgeFuture]}>
                   <Text style={styles.badgeText}>עתידי</Text>
                 </View>
               )}
+
               {isUserPeriodStart && (
                 <View style={[styles.badge, styles.badgeUser]}>
                   <Text style={styles.badgeText}>תחילת מחזור שהוזנה</Text>
+                </View>
+              )}
+
+              {advancedTracking && (
+                <View style={[styles.badge, styles.badgeAdv]}>
+                  <Text style={styles.badgeText}>מעקב מתקדם</Text>
                 </View>
               )}
             </View>
@@ -513,6 +567,7 @@ export default function DayModal(props: Props) {
                   <Pressable onPress={pickPhoto} style={[styles.actionBtn, styles.actionBtnGhost]}>
                     <Text style={styles.actionTextGhost}>החליפי תמונה</Text>
                   </Pressable>
+
                   <Pressable onPress={removePhoto} style={[styles.actionBtn, styles.actionBtnDanger]}>
                     <Text style={styles.actionTextDanger}>הסירי תמונה</Text>
                   </Pressable>
@@ -524,9 +579,7 @@ export default function DayModal(props: Props) {
               </Pressable>
             )}
 
-            <Text style={styles.notesHint}>
-              התמונה נשמרת כמזהה מקומי (URI). בשלב הבא אפשר לשדרג לשמירה קבועה בתוך האפליקציה.
-            </Text>
+            <Text style={styles.notesHint}>התמונה נשמרת כמזהה מקומי (URI).</Text>
           </View>
 
           <OptionRow
@@ -565,8 +618,60 @@ export default function DayModal(props: Props) {
             onChange={v => setPatch({ mood: v })}
           />
 
+          {advancedTracking && (
+            <>
+              <OptionRow
+                title="הפרשה"
+                value={symptoms.discharge || 'dry'}
+                options={[
+                  { value: 'dry', label: 'יבש' },
+                  { value: 'sticky', label: 'דביק' },
+                  { value: 'creamy', label: 'קרמי' },
+                  { value: 'watery', label: 'מימי' },
+                  { value: 'eggwhite', label: 'חלבון ביצה' },
+                ]}
+                onChange={v => setPatch({ discharge: v })}
+              />
+
+              <TernaryRow
+                title="יחסים"
+                value={symptoms.sex}
+                onChange={v => setPatch({ sex: v })}
+                labels={{ unknown: 'לא מסומן', yes: 'כן', no: 'לא' }}
+              />
+
+              <OptionRow
+                title="בדיקת ביוץ"
+                value={symptoms.ovulationTest || 'negative'}
+                options={[
+                  { value: 'negative', label: 'שלילית' },
+                  { value: 'positive', label: 'חיובית' },
+                ]}
+                onChange={v => setPatch({ ovulationTest: v })}
+              />
+
+              <View style={styles.block}>
+                <Text style={styles.blockTitle}>חום בסיסי (BBT)</Text>
+
+                <TextInput
+                  value={localBbt}
+                  onChangeText={setLocalBbt}
+                  onBlur={handleSaveBbt}
+                  placeholder="לדוגמה 36.6"
+                  placeholderTextColor="#888"
+                  keyboardType="decimal-pad"
+                  style={styles.notes}
+                  textAlign="right"
+                />
+
+                <Text style={styles.notesHint}>נשמר אוטומטית כשאת יוצאת מהשדה. להשאיר ריק כדי למחוק.</Text>
+              </View>
+            </>
+          )}
+
           <View style={styles.block}>
             <Text style={styles.blockTitle}>הערות</Text>
+
             <TextInput
               value={localNotes}
               onChangeText={setLocalNotes}
@@ -577,6 +682,7 @@ export default function DayModal(props: Props) {
               style={styles.notes}
               textAlign="right"
             />
+
             <Text style={styles.notesHint}>נשמר אוטומטית כשאת יוצאת מהשדה</Text>
           </View>
 
@@ -647,6 +753,7 @@ const styles = StyleSheet.create({
   badgeToday: { backgroundColor: '#efe5ff', borderColor: '#d9c3ff' },
   badgeFuture: { backgroundColor: '#fafafa', borderColor: '#eee' },
   badgeUser: { backgroundColor: '#fff', borderColor: '#111' },
+  badgeAdv: { backgroundColor: '#e9fff0', borderColor: '#c8f5d6' },
 
   badgeText: { fontWeight: '900', color: '#222', writingDirection: 'rtl' },
 
@@ -668,7 +775,6 @@ const styles = StyleSheet.create({
     borderColor: '#eee',
     backgroundColor: '#fafafa',
   },
-
   statText: { fontWeight: '900', color: '#222', writingDirection: 'rtl' },
 
   summaryBox: {
@@ -679,7 +785,6 @@ const styles = StyleSheet.create({
     padding: 12,
     marginBottom: 12,
   },
-
   summaryText: {
     color: '#2b1b3a',
     fontWeight: '800',
@@ -704,23 +809,10 @@ const styles = StyleSheet.create({
     borderColor: '#eee',
     backgroundColor: '#fff',
   },
-
   actionBtnDisabled: { opacity: 0.5 },
-
-  actionBtnDanger: {
-    borderColor: '#ffd0d9',
-    backgroundColor: '#ffe3e8',
-  },
-
-  actionBtnGhost: {
-    borderColor: '#eee',
-    backgroundColor: '#fafafa',
-  },
-
-  actionBtnPrimary: {
-    borderColor: '#d9c3ff',
-    backgroundColor: '#efe5ff',
-  },
+  actionBtnDanger: { borderColor: '#ffd0d9', backgroundColor: '#ffe3e8' },
+  actionBtnGhost: { borderColor: '#eee', backgroundColor: '#fafafa' },
+  actionBtnPrimary: { borderColor: '#d9c3ff', backgroundColor: '#efe5ff' },
 
   actionText: { fontWeight: '900', color: '#111', writingDirection: 'rtl' },
   actionTextDisabled: { color: '#666' },
@@ -728,27 +820,10 @@ const styles = StyleSheet.create({
   actionTextGhost: { fontWeight: '900', color: '#333', writingDirection: 'rtl' },
   actionTextPrimary: { fontWeight: '900', color: '#2b0b3f', writingDirection: 'rtl' },
 
-  block: {
-    borderWidth: 1,
-    borderColor: '#eee',
-    borderRadius: 16,
-    padding: 12,
-    marginTop: 10,
-  },
+  block: { borderWidth: 1, borderColor: '#eee', borderRadius: 16, padding: 12, marginTop: 10 },
+  blockTitle: { fontWeight: '900', color: '#222', marginBottom: 10, writingDirection: 'rtl', textAlign: 'right' },
 
-  blockTitle: {
-    fontWeight: '900',
-    color: '#222',
-    marginBottom: 10,
-    writingDirection: 'rtl',
-    textAlign: 'right',
-  },
-
-  optionsRow: {
-    flexDirection: 'row-reverse',
-    flexWrap: 'wrap',
-    gap: 10,
-  },
+  optionsRow: { flexDirection: 'row-reverse', flexWrap: 'wrap', gap: 10 },
 
   optBtn: {
     paddingVertical: 8,
@@ -758,11 +833,7 @@ const styles = StyleSheet.create({
     borderColor: '#eee',
     backgroundColor: '#fff',
   },
-
-  optBtnActive: {
-    borderColor: '#6a1b9a',
-    backgroundColor: '#efe5ff',
-  },
+  optBtnActive: { borderColor: '#6a1b9a', backgroundColor: '#efe5ff' },
 
   optText: { fontWeight: '900', color: '#333', writingDirection: 'rtl' },
   optTextActive: { color: '#2b0b3f' },
@@ -772,7 +843,7 @@ const styles = StyleSheet.create({
     borderColor: '#eee',
     borderRadius: 14,
     padding: 12,
-    minHeight: 88,
+    minHeight: 48,
     fontWeight: '700',
     color: '#111',
     writingDirection: 'rtl',
@@ -795,10 +866,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#fafafa',
   },
 
-  photo: {
-    width: '100%',
-    height: 220,
-  },
+  photo: { width: '100%', height: 220 },
 
   photoActions: {
     marginTop: 10,

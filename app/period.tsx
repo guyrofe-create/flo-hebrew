@@ -1,15 +1,9 @@
-// app/period.tsx
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useRouter } from 'expo-router';
 import React, { useMemo, useState } from 'react';
 import { Alert, Button, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useUserData } from '../context/UserDataContext';
-
-function normalizeNoon(d: Date) {
-  const x = new Date(d);
-  x.setHours(12, 0, 0, 0);
-  return x;
-}
+import { normalizeNoon } from '../lib/date';
 
 function isoDay(iso: string) {
   return iso.slice(0, 10);
@@ -61,8 +55,6 @@ export default function PeriodScreen() {
       return;
     }
 
-    // אל תשתמשי ב-setPeriodStart כאן כדי לא לייצר כתיבה כפולה/מרדף מצבים.
-    // addPeriodDate כבר מעדכן periodStart למחזור האחרון (updated[0]).
     const exists = periodHistory.some(d => isoDay(d) === isoDay(lastIso));
     if (!exists) {
       await addPeriodDate(lastIso);
@@ -70,7 +62,6 @@ export default function PeriodScreen() {
       await setPeriodStart(lastIso);
     }
 
-    // חשוב: ב-onboarding אין (tabs), הולכים לדשבורד הטאבס
     router.replace('/(tabs)/dashboard');
   };
 
@@ -84,7 +75,6 @@ export default function PeriodScreen() {
 
     await addPeriodDate(pastIso);
 
-    // ניקוי בחירה
     setPastDate(null);
     setShowPastPicker(false);
   };

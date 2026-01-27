@@ -1,3 +1,4 @@
+// app/(tabs)/_layout.tsx
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { Tabs } from 'expo-router';
 
@@ -15,16 +16,9 @@ export default function TabsLayout() {
         options={{
           title: 'לוח שנה',
           tabBarLabel: 'לוח שנה',
-          tabBarIcon: ({ color }) => <FontAwesome name="calendar" size={22} color={color} />,
-        }}
-      />
-
-      <Tabs.Screen
-        name="settings"
-        options={{
-          title: 'הגדרות',
-          tabBarLabel: 'הגדרות',
-          tabBarIcon: ({ color }) => <FontAwesome name="cog" size={22} color={color} />,
+          tabBarIcon: ({ color }) => (
+            <FontAwesome name="calendar" size={22} color={color} />
+          ),
         }}
       />
 
@@ -33,7 +27,20 @@ export default function TabsLayout() {
         options={{
           title: 'מעקב',
           tabBarLabel: 'מעקב',
-          tabBarIcon: ({ color }) => <FontAwesome name="heart" size={22} color={color} />,
+          tabBarIcon: ({ color }) => (
+            <FontAwesome name="heart" size={22} color={color} />
+          ),
+        }}
+      />
+
+      <Tabs.Screen
+        name="settings"
+        options={{
+          title: 'הגדרות',
+          tabBarLabel: 'הגדרות',
+          tabBarIcon: ({ color }) => (
+            <FontAwesome name="cog" size={22} color={color} />
+          ),
         }}
       />
     </Tabs>

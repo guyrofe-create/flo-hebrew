@@ -2,11 +2,11 @@
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { useUserData } from '../../context/UserDataContext';
+import { normalizeNoon } from '../../lib/date';
 import {
     cancelDailyReminder,
-    // Predicted period
     cancelPredictedPeriodReminder,
     debugScheduledNotificationsText,
     ensureNotifPermissions,
@@ -26,16 +26,17 @@ function pad2(n: number) {
   return String(n).padStart(2, '0');
 }
 
-function normalizeNoon(d: Date) {
-  const x = new Date(d);
-  x.setHours(12, 0, 0, 0);
-  return x;
-}
-
 export default function SettingsScreen() {
   const router = useRouter();
 
-  const { resetUserData, periodHistory, periodStart, cycleLength } = useUserData();
+  const {
+    resetUserData,
+    periodHistory,
+    periodStart,
+    cycleLength,
+    advancedTracking,
+    setAdvancedTracking,
+  } = useUserData();
 
   const [dailyEnabled, setDailyEnabled] = useState<boolean>(false);
   const [dailyTime, setDailyTime] = useState<DailyTime>({ hour: 20, minute: 30 });
@@ -44,10 +45,7 @@ export default function SettingsScreen() {
   const [predEnabled, setPredEnabled] = useState<boolean>(false);
   const [predScheduled, setPredScheduled] = useState<boolean>(false);
 
-  const timeLabel = useMemo(
-    () => `${pad2(dailyTime.hour)}:${pad2(dailyTime.minute)}`,
-    [dailyTime]
-  );
+  const timeLabel = useMemo(() => `${pad2(dailyTime.hour)}:${pad2(dailyTime.minute)}`, [dailyTime]);
 
   const lastPeriodStartIso = useMemo(() => {
     const newest = periodHistory?.length ? periodHistory[0] : periodStart;
@@ -133,7 +131,6 @@ export default function SettingsScreen() {
       Alert.alert('עודכן', `שעת התזכורת נשמרה ל-${pad2(h)}:${pad2(m)}. הפעל את התזכורת כדי שתרוץ.`);
     }
 
-    // גם תזכורת מחזור צפוי משתמשת באותה שעה, אז אם היא מופעלת נעדכן אותה
     await reschedulePredictedIfNeeded();
   };
 
@@ -177,6 +174,10 @@ export default function SettingsScreen() {
     Alert.alert('DEBUG - Scheduled Notifications', txt);
   };
 
+  const toggleAdvancedTracking = async (v: boolean) => {
+    await setAdvancedTracking(v);
+  };
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
       <Text style={styles.title}>הגדרות</Text>
@@ -186,12 +187,33 @@ export default function SettingsScreen() {
       </Pressable>
 
       <View style={styles.card}>
+        <Text style={styles.cardTitle}>מעקב</Text>
+
+        <View style={styles.row}>
+          <View style={styles.rowTextWrap}>
+            <Text style={styles.rowTitle}>מעקב מתקדם</Text>
+            <Text style={styles.rowSub}>
+              מציג שדות נוספים ביומן: הפרשות, יחסים, בדיקות ביוץ, חום בסיסי (BBT).
+            </Text>
+          </View>
+
+          <Switch
+            value={advancedTracking}
+            onValueChange={(v) => {
+              void toggleAdvancedTracking(v);
+            }}
+          />
+        </View>
+
+        <Text style={styles.cardNote}>
+          אפשר לכבות בכל רגע. הנתונים שנשמרו נשארים, ורק התצוגה משתנה.
+        </Text>
+      </View>
+
+      <View style={styles.card}>
         <Text style={styles.cardTitle}>תזכורות</Text>
 
-        <Pressable
-          style={[styles.btn, dailyEnabled ? styles.btnOn : styles.btnOff]}
-          onPress={toggleDaily}
-        >
+        <Pressable style={[styles.btn, dailyEnabled ? styles.btnOn : styles.btnOff]} onPress={toggleDaily}>
           <Text style={[styles.btnText, dailyEnabled ? styles.btnTextOn : styles.btnTextOff]}>
             {dailyEnabled ? `כיבוי תזכורת יומית (${timeLabel})` : `הפעלת תזכורת יומית (${timeLabel})`}
           </Text>
@@ -215,10 +237,7 @@ export default function SettingsScreen() {
 
         <View style={styles.sep} />
 
-        <Pressable
-          style={[styles.btn, predEnabled ? styles.btnOn : styles.btnOff]}
-          onPress={togglePredicted}
-        >
+        <Pressable style={[styles.btn, predEnabled ? styles.btnOn : styles.btnOff]} onPress={togglePredicted}>
           <Text style={[styles.btnText, predEnabled ? styles.btnTextOn : styles.btnTextOff]}>
             {predEnabled
               ? `כיבוי תזכורת למחזור צפוי (${predScheduled ? 'מתוזמן' : 'לא מתוזמן'})`
@@ -242,7 +261,9 @@ export default function SettingsScreen() {
       </View>
 
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>מסמכים</Text>
+        <Pressable style={[styles.btn, styles.docBtn]} onPress={() => router.push('/about' as any)}>
+          <Text style={[styles.btnText, styles.docText]}>אודות</Text>
+        </Pressable>
 
         <Pressable style={[styles.btn, styles.docBtn]} onPress={() => router.push('/legal')}>
           <Text style={[styles.btnText, styles.docText]}>מידע משפטי</Text>
@@ -252,9 +273,7 @@ export default function SettingsScreen() {
           <Text style={[styles.btnText, styles.docText]}>מדיניות פרטיות</Text>
         </Pressable>
 
-        <Text style={styles.cardNote}>
-          מומלץ לקרוא לפני שימוש. המסמכים זמינים גם מהדיסקליימר במסך הפתיחה.
-        </Text>
+        <Text style={styles.cardNote}>מומלץ לקרוא לפני שימוש. המסמכים זמינים גם מהדיסקליימר במסך הפתיחה.</Text>
       </View>
 
       <Pressable
@@ -324,6 +343,36 @@ const styles = StyleSheet.create({
     writingDirection: 'rtl',
     textAlign: 'right',
     fontWeight: '700',
+  },
+
+  row: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    borderWidth: 1,
+    borderColor: '#eee',
+    borderRadius: 16,
+    backgroundColor: '#fafafa',
+  },
+  rowTextWrap: { flex: 1 },
+  rowTitle: {
+    fontWeight: '900',
+    fontSize: 15,
+    color: '#111',
+    writingDirection: 'rtl',
+    textAlign: 'right',
+  },
+  rowSub: {
+    marginTop: 4,
+    fontSize: 12,
+    color: '#666',
+    fontWeight: '700',
+    writingDirection: 'rtl',
+    textAlign: 'right',
+    lineHeight: 16,
   },
 
   btnOn: { borderColor: '#d9c3ff', backgroundColor: '#efe5ff' },

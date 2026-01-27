@@ -1,4 +1,3 @@
-// app/privacy.tsx
 import { useRouter } from 'expo-router';
 import React from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -19,29 +18,45 @@ export default function PrivacyScreen() {
         <Text style={styles.sectionTitle}>עקרון בסיסי</Text>
         <Text style={styles.text}>
           האפליקציה שומרת נתונים מקומית על המכשיר בלבד (Local storage).
-          אין שליחה אוטומטית של נתונים לשרת חיצוני.
+          אין שליחה אוטומטית של נתונים לשרת חיצוני כברירת מחדל.
         </Text>
 
         <Text style={styles.sectionTitle}>איזה נתונים נשמרים</Text>
         <Text style={styles.text}>
-          נתוני מטרה, תאריך לידה, תאריכי מחזור שהוזנו, סימפטומים והערות, ותמונה ליום אם הוזנה.
+          נתוני מטרה, תאריך לידה, תאריכי מחזור שהוזנו, סימפטומים והערות, ותמונה ליום (אם הוזנה) נשמרים מקומית במכשיר.
+        </Text>
+
+        <Text style={styles.sectionTitle}>תמונות</Text>
+        <Text style={styles.text}>
+          אם המשתמשת בוחרת להוסיף תמונה ליום מסוים, התמונה נשמרת מקומית במכשיר ונגישה רק מתוך האפליקציה.
+          לא מתבצע גיבוי אוטומטי לשרת של האפליקציה.
         </Text>
 
         <Text style={styles.sectionTitle}>הרשאות</Text>
         <Text style={styles.text}>
           התראות: נדרשות רק אם המשתמשת מפעילה תזכורת יומית.
-          תמונות: נדרשת גישה למדיה רק אם המשתמשת בוחרת להוסיף תמונה ליום.
+          {'\n'}
+          תמונות/מדיה: נדרשת גישה למדיה רק אם המשתמשת בוחרת להוסיף תמונה ליום.
         </Text>
 
-        <Text style={styles.sectionTitle}>שיתוף מידע</Text>
+        <Text style={styles.sectionTitle}>שיתוף מידע עם צדדים שלישיים</Text>
         <Text style={styles.text}>
-          האפליקציה לא משתפת נתונים עם צדדים שלישיים כברירת מחדל.
-          אם בעתיד יתווסף כלי ניטור תקלות (כמו Sentry), הוא יופעל רק כדי לדווח על שגיאות טכניות ולא מידע רפואי אישי.
+          האפליקציה לא משתפת מידע רפואי אישי עם צדדים שלישיים כברירת מחדל.
+          {'\n'}
+          אם בעתיד יתווסף כלי ניטור תקלות (כמו Sentry), הוא יופעל לצורך דיווח תקלות טכניות בלבד,
+          ויימנע ככל האפשר משליחת מידע אישי רגיש.
         </Text>
 
-        <Text style={styles.sectionTitle}>מחיקה ואיפוס</Text>
+        <Text style={styles.sectionTitle}>איפוס ומחיקה</Text>
         <Text style={styles.text}>
           ניתן לאפס את כל הנתונים מהמסך "הגדרות" ולמחוק את המידע המקומי מהמכשיר.
+        </Text>
+
+        <Text style={styles.sectionTitle}>יצירת קשר בנושא פרטיות</Text>
+        <Text style={styles.text}>
+          בעל האפליקציה: ד״ר גיא רופא
+          {'\n'}
+          לפניות בנושא פרטיות: briutguy@gmail.com
         </Text>
 
         <Text style={styles.footer}>עדכון אחרון: ינואר 2026</Text>

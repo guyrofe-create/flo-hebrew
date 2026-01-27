@@ -1,6 +1,7 @@
+// app/onboarding/purpose.tsx
+import { useRouter } from 'expo-router';
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { useRouter } from 'expo-router';
 import { useUserData } from '../../context/UserDataContext';
 
 const OPTIONS = [
@@ -9,13 +10,14 @@ const OPTIONS = [
   { key: 'track', label: 'מעקב כללי' },
 ] as const;
 
+type GoalKey = (typeof OPTIONS)[number]['key'];
+
 export default function PurposeScreen() {
   const router = useRouter();
   const { setGoal } = useUserData();
 
-  const onPick = async (goalKey: string) => {
+  const onPick = async (goalKey: GoalKey) => {
     await setGoal(goalKey);
-    // אם typed routes מציק - cast ל-any כדי לא לחסום קומפילציה
     (router as any).push('/onboarding/cycle-length');
   };
 

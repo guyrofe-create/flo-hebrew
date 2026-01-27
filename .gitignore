@@ -42,3 +42,8 @@ yarn-error.*
 
 # backups
 *.bak
+
+# backups
+*.bak
+*.bak*
+*~

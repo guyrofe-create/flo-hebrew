@@ -1,15 +1,9 @@
-// app/onboarding/last-period.tsx
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useRouter } from 'expo-router';
 import React, { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useUserData } from '../../context/UserDataContext';
-
-function normalizeNoon(d: Date) {
-  const x = new Date(d);
-  x.setHours(12, 0, 0, 0);
-  return x;
-}
+import { normalizeNoon } from '../../lib/date';
 
 export default function LastPeriodScreen() {
   const router = useRouter();

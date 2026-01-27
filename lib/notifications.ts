@@ -1,12 +1,11 @@
-// lib/notifications.ts
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
+import { addDays, normalizeNoon } from './date';
 
 const STORAGE_KEY_DAILY_REMINDER_ID = 'shula_daily_reminder_id';
-const STORAGE_KEY_DAILY_REMINDER_TIME = 'shula_daily_reminder_time'; // "HH:MM"
+const STORAGE_KEY_DAILY_REMINDER_TIME = 'shula_daily_reminder_time';
 
-// Predicted period reminder
-const STORAGE_KEY_PREDICTED_PERIOD_ENABLED = 'shula_predicted_period_enabled'; // "true" | "false"
+const STORAGE_KEY_PREDICTED_PERIOD_ENABLED = 'shula_predicted_period_enabled';
 const STORAGE_KEY_PREDICTED_PERIOD_ID = 'shula_predicted_period_id';
 
 export type DailyTime = { hour: number; minute: number };
@@ -26,18 +25,6 @@ function normalizeTime(hour: number, minute: number): DailyTime {
     hour: clampInt(hour, 0, 23),
     minute: clampInt(minute, 0, 59),
   };
-}
-
-function normalizeNoon(d: Date) {
-  const x = new Date(d);
-  x.setHours(12, 0, 0, 0);
-  return x;
-}
-
-function addDays(date: Date, days: number) {
-  const d = new Date(date);
-  d.setDate(d.getDate() + days);
-  return normalizeNoon(d);
 }
 
 function buildTriggerDate(baseDay: Date, hour: number, minute: number) {
@@ -96,7 +83,6 @@ export async function ensureNotifPermissions(): Promise<boolean> {
   return !!requested.granted;
 }
 
-// Daily time preference
 export async function setDailyReminderTime(hour: number, minute: number): Promise<void> {
   const t = normalizeTime(hour, minute);
   const value = `${pad2(t.hour)}:${pad2(t.minute)}`;
@@ -123,7 +109,6 @@ export async function getDailyReminderTime(): Promise<DailyTime> {
   }
 }
 
-// Daily reminder
 export async function scheduleDailyReminder(hour: number, minute: number): Promise<void> {
   await cancelDailyReminder();
 
@@ -157,7 +142,6 @@ export async function cancelDailyReminder(): Promise<void> {
     }
   }
 
-  // Cleanup possible duplicates by title + DAILY
   try {
     const all = await Notifications.getAllScheduledNotificationsAsync();
     for (const n of all) {
@@ -193,7 +177,6 @@ export async function isDailyReminderScheduled(): Promise<boolean> {
   });
 }
 
-// Predicted period enabled flag
 export async function setPredictedPeriodReminderEnabled(enabled: boolean): Promise<void> {
   try {
     await AsyncStorage.setItem(STORAGE_KEY_PREDICTED_PERIOD_ENABLED, enabled ? 'true' : 'false');
@@ -211,11 +194,7 @@ export async function getPredictedPeriodReminderEnabled(): Promise<boolean> {
   }
 }
 
-// Predicted period reminder (one-time date trigger)
-export async function schedulePredictedPeriodReminder(
-  lastPeriodStartIso: string,
-  cycleLength: number
-): Promise<void> {
+export async function schedulePredictedPeriodReminder(lastPeriodStartIso: string, cycleLength: number): Promise<void> {
   await cancelPredictedPeriodReminder();
 
   const okCycle = Number.isFinite(cycleLength) && cycleLength > 0;
@@ -227,12 +206,10 @@ export async function schedulePredictedPeriodReminder(
   const { hour, minute } = await getDailyReminderTime();
   const now = new Date();
 
-  // next period date (noon), reminder is day before
   let nextPeriod = addDays(lastStart, cycleLength);
   let reminderDay = addDays(nextPeriod, -1);
   let triggerDate = buildTriggerDate(reminderDay, hour, minute);
 
-  // If trigger is in the past (or too close), push to next cycle
   if (triggerDate.getTime() <= now.getTime() + 60_000) {
     nextPeriod = addDays(nextPeriod, cycleLength);
     reminderDay = addDays(nextPeriod, -1);
@@ -265,7 +242,6 @@ export async function cancelPredictedPeriodReminder(): Promise<void> {
     }
   }
 
-  // Cleanup by title match (one-time triggers)
   try {
     const all = await Notifications.getAllScheduledNotificationsAsync();
     for (const n of all) {

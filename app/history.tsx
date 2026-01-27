@@ -1,18 +1,12 @@
-// app/history.tsx
-export const options = {
-    title: 'היסטוריית מחזורים',
-  };
-  
 import DateTimePicker from '@react-native-community/datetimepicker';
 import React, { useMemo, useState } from 'react';
 import { Alert, Button, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useUserData } from '../context/UserDataContext';
+import { normalizeNoon } from '../lib/date';
 
-function normalizeNoon(d: Date) {
-  const x = new Date(d);
-  x.setHours(12, 0, 0, 0);
-  return x;
-}
+export const options = {
+  title: 'היסטוריית מחזורים',
+};
 
 function isoDay(iso: string) {
   return iso.slice(0, 10);

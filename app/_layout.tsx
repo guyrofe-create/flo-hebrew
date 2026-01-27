@@ -25,9 +25,12 @@ export default function RootLayout() {
       >
         <Stack.Screen name="index" options={{ headerShown: false }} />
         <Stack.Screen name="disclaimer" options={{ headerShown: false }} />
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="(tabs)" options={{ headerShown: false, title: 'חזרה' }} />
         <Stack.Screen name="onboarding" options={{ headerShown: false }} />
-      </Stack>
+        <Stack.Screen name="about" options={{ title: "אודות שולה" }} />
+  <Stack.Screen name="legal" options={{ title: "מידע משפטי והבהרות" }} />
+  <Stack.Screen name="privacy" options={{ title: "מדיניות פרטיות" }} />
+</Stack>
     </UserDataProvider>
   );
 }

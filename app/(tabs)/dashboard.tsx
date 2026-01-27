@@ -1,373 +1,417 @@
-import { useRouter } from 'expo-router';
 import React, { useMemo } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useUserData } from '../../context/UserDataContext';
+import { addDays, isoNoonFromKey, normalizeNoon } from '../../lib/date';
 
-function formatDate(date: Date) {
-  return date.toLocaleDateString('he-IL');
+function formatDateIL(d: Date) {
+  return d.toLocaleDateString('he-IL');
 }
 
-function normalizeNoon(d: Date) {
-  const x = new Date(d);
-  x.setHours(12, 0, 0, 0);
-  return x;
+function isOvulationPositive(v: unknown) {
+  if (v === true) return true;
+
+  if (typeof v === 'number') return v === 1;
+
+  if (typeof v !== 'string') return false;
+
+  const s = v.trim().toLowerCase();
+
+  return (
+    s === 'positive' ||
+    s === 'pos' ||
+    s === 'true' ||
+    s === 'yes' ||
+    s === 'y' ||
+    s === '1' ||
+    s === 'חיובי' ||
+    s === 'כן'
+  );
 }
 
-function addDays(date: Date, days: number) {
-  const d = new Date(date);
-  d.setDate(d.getDate() + days);
-  return normalizeNoon(d);
+function parseNoonFromDayKey(key: string): Date | null {
+  try {
+    const d = normalizeNoon(new Date(isoNoonFromKey(key)));
+    if (Number.isNaN(d.getTime())) return null;
+    return d;
+  } catch {
+    return null;
+  }
 }
 
-function daysBetween(a: Date, b: Date) {
-  const start = normalizeNoon(a);
-  const end = normalizeNoon(b);
-  return Math.round((+end - +start) / 86400000);
+function getLatestPeriodStart(
+  periodHistory: string[] | undefined,
+  periodStart: string | null | undefined
+): Date | null {
+  let best: Date | null = null;
+
+  if (Array.isArray(periodHistory) && periodHistory.length) {
+    for (const iso of periodHistory) {
+      const d = normalizeNoon(new Date(iso));
+      if (Number.isNaN(d.getTime())) continue;
+      if (!best || d.getTime() > best.getTime()) best = d;
+    }
+  }
+
+  if (!best && periodStart) {
+    const d = normalizeNoon(new Date(periodStart));
+    if (!Number.isNaN(d.getTime())) best = d;
+  }
+
+  return best;
+}
+
+function findLatestPositiveOvulationSince(
+  symptomsByDay: Record<string, any> | undefined,
+  since: Date | null,
+  until: Date
+): Date | null {
+  if (!symptomsByDay || !since) return null;
+
+  const start = normalizeNoon(since);
+  const end = normalizeNoon(until);
+
+  let best: Date | null = null;
+
+  for (const key of Object.keys(symptomsByDay)) {
+    const sym = symptomsByDay[key];
+    if (!sym) continue;
+    if (!isOvulationPositive(sym.ovulationTest)) continue;
+
+    const d = parseNoonFromDayKey(key);
+    if (!d) continue;
+
+    if (d.getTime() < start.getTime() || d.getTime() > end.getTime()) continue;
+
+    if (!best || d.getTime() > best.getTime()) best = d;
+  }
+
+  return best;
 }
 
 export default function DashboardScreen() {
-  const router = useRouter();
-
   const {
     goal,
-    birthday,
-    periodStart,
     periodHistory,
+    periodStart,
     cycleLength,
     periodLength,
     isPeriodActive,
     startPeriodToday,
     endPeriodToday,
-    resetUserData,
+    symptomsByDay,
   } = useUserData();
 
   const today = useMemo(() => normalizeNoon(new Date()), []);
 
-  // newest period start (periodHistory sorted newest->oldest)
   const lastPeriodStart = useMemo(() => {
-    if (!periodStart && periodHistory.length === 0) return null;
+    return getLatestPeriodStart(periodHistory, periodStart);
+  }, [periodHistory, periodStart]);
 
-    const newest = periodHistory.length > 0 ? periodHistory[0] : periodStart!;
-    return normalizeNoon(new Date(newest));
-  }, [periodStart, periodHistory]);
-
-  const cycleDay = useMemo(() => {
-    if (!lastPeriodStart) return null;
-    return daysBetween(lastPeriodStart, today) + 1;
-  }, [lastPeriodStart, today]);
-
-  const periodEndDate = useMemo(() => {
-    if (!lastPeriodStart) return null;
-    return addDays(lastPeriodStart, periodLength - 1);
+  const computedPeriodEnd = useMemo(() => {
+    if (!lastPeriodStart || !periodLength || periodLength <= 0) return null;
+    return normalizeNoon(addDays(lastPeriodStart, Math.max(0, periodLength - 1)));
   }, [lastPeriodStart, periodLength]);
 
-  const nextPeriodDate = useMemo(() => {
-    if (!lastPeriodStart) return null;
-    return addDays(lastPeriodStart, cycleLength);
-  }, [lastPeriodStart, cycleLength]);
+  const latestPositiveOvulation = useMemo(() => {
+    return findLatestPositiveOvulationSince(symptomsByDay, lastPeriodStart, today);
+  }, [symptomsByDay, lastPeriodStart, today]);
 
   const ovulationDate = useMemo(() => {
-    if (!lastPeriodStart) return null;
-    return addDays(lastPeriodStart, cycleLength - 14);
-  }, [lastPeriodStart, cycleLength]);
+    if (latestPositiveOvulation) return latestPositiveOvulation;
 
-  const fertilityWindow = useMemo(() => {
+    if (!lastPeriodStart || !cycleLength || cycleLength <= 0) return null;
+    const ovuIndex = Math.max(0, cycleLength - 14);
+    return normalizeNoon(addDays(lastPeriodStart, ovuIndex));
+  }, [latestPositiveOvulation, lastPeriodStart, cycleLength]);
+
+  const fertileWindow = useMemo(() => {
     if (!ovulationDate) return null;
-    return {
-      start: addDays(ovulationDate, -4),
-      end: addDays(ovulationDate, +1),
-    };
+    const start = normalizeNoon(addDays(ovulationDate, -4));
+    const end = normalizeNoon(addDays(ovulationDate, 1));
+    return { start, end };
   }, [ovulationDate]);
 
-  // status labels
-  const headerText = useMemo(() => {
-    if (!cycleDay) return 'בואי נתחיל לעקוב';
-    return isPeriodActive ? `יום ${cycleDay} למחזור` : `יום ${cycleDay} במחזור`;
-  }, [cycleDay, isPeriodActive]);
+  const nextPeriodStart = useMemo(() => {
+    if (latestPositiveOvulation) return normalizeNoon(addDays(latestPositiveOvulation, 14));
 
-  const daysToNextPeriod = useMemo(() => {
-    if (!nextPeriodDate) return null;
-    return daysBetween(today, nextPeriodDate);
-  }, [today, nextPeriodDate]);
+    if (!lastPeriodStart || !cycleLength || cycleLength <= 0) return null;
+    return normalizeNoon(addDays(lastPeriodStart, cycleLength));
+  }, [latestPositiveOvulation, lastPeriodStart, cycleLength]);
 
-  const fertilityNow = useMemo(() => {
-    if (!fertilityWindow) return false;
-    return today >= fertilityWindow.start && today <= fertilityWindow.end;
-  }, [fertilityWindow, today]);
+  const cycleDayNumber = useMemo(() => {
+    if (!lastPeriodStart) return null;
+    const diffDays = Math.floor((today.getTime() - lastPeriodStart.getTime()) / (24 * 60 * 60 * 1000));
+    return diffDays >= 0 ? diffDays + 1 : null;
+  }, [today, lastPeriodStart]);
 
-  const ovulationToday = useMemo(() => {
-    if (!ovulationDate) return false;
-    return formatDate(ovulationDate) === formatDate(today);
-  }, [ovulationDate, today]);
+  const isInFertileWindow = useMemo(() => {
+    if (!fertileWindow) return false;
+    return today.getTime() >= fertileWindow.start.getTime() && today.getTime() <= fertileWindow.end.getTime();
+  }, [fertileWindow, today]);
+
+  const inPeriodByCalc = useMemo(() => {
+    if (!lastPeriodStart || !periodLength || periodLength <= 0) return false;
+    const end = normalizeNoon(addDays(lastPeriodStart, Math.max(0, periodLength - 1)));
+    return today.getTime() >= lastPeriodStart.getTime() && today.getTime() <= end.getTime();
+  }, [today, lastPeriodStart, periodLength]);
+
+  const handlePrimary = async () => {
+    if (isPeriodActive) {
+      await endPeriodToday();
+      return;
+    }
+    await startPeriodToday();
+  };
+
+  const goalLabel = useMemo(() => {
+    if (!goal) return 'מעקב כללי';
+    return goal === 'pregnancy' ? 'כניסה להריון' : goal === 'contraception' ? 'מניעה' : 'מעקב כללי';
+  }, [goal]);
+
+  const handleDebugPress = () => {
+    const lp = lastPeriodStart ? formatDateIL(lastPeriodStart) : '-';
+    const ov = latestPositiveOvulation ? formatDateIL(latestPositiveOvulation) : '-';
+    Alert.alert('דיבוג (זמני)', `תחילת מחזור אחרון: ${lp}\nבדיקת ביוץ חיובית אחרונה: ${ov}`);
+  };
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-      <Text style={styles.appTitle}>Flo Hebrew</Text>
+      <Text style={styles.screenTitle}>מעקב</Text>
 
-      {/* TODAY CARD */}
-      <View style={styles.card}>
-        <Text style={styles.bigTitle}>{headerText}</Text>
+      <View style={styles.cardTop}>
+        <Text style={styles.bigTitle}>{cycleDayNumber ? `יום ${cycleDayNumber} במחזור` : 'מעקב מחזור'}</Text>
 
-        {!lastPeriodStart ? (
-          <Text style={styles.subText}>עוד לא הוזן מחזור. התחילי עכשיו.</Text>
-        ) : (
-          <>
-            <Text style={styles.subText}>
-              תחילת מחזור אחרון: {formatDate(lastPeriodStart)}
-            </Text>
+        {lastPeriodStart && <Text style={styles.smallLine}>תחילת מחזור אחרון: {formatDateIL(lastPeriodStart)}</Text>}
+        {computedPeriodEnd && <Text style={styles.smallLine}>סיום מחזור משוער: {formatDateIL(computedPeriodEnd)}</Text>}
+        {nextPeriodStart && <Text style={styles.smallLine}>מחזור צפוי הבא: {formatDateIL(nextPeriodStart)}</Text>}
 
-            {periodEndDate && (
-              <Text style={styles.subText}>
-                סיום מחזור משוער: {formatDate(periodEndDate)}
-              </Text>
-            )}
+        <Text style={styles.goalLine}>{goalLabel}</Text>
 
-            {nextPeriodDate && (
-              <Text style={styles.subText}>
-                מחזור צפוי הבא: {formatDate(nextPeriodDate)}
-                {daysToNextPeriod !== null ? ` (בעוד ${daysToNextPeriod} ימים)` : ''}
-              </Text>
-            )}
-
-            {(fertilityNow || ovulationToday) && (
-              <Text style={styles.highlight}>
-                {ovulationToday ? 'ביוץ משוער היום' : 'את בחלון הפוריות'}
-              </Text>
-            )}
-          </>
-        )}
-
-        {/* MAIN FLO ACTION */}
-        <Pressable
-          style={[
-            styles.mainButton,
-            isPeriodActive ? styles.mainButtonEnd : styles.mainButtonStart,
-          ]}
-          onPress={async () => {
-            if (isPeriodActive) {
-              await endPeriodToday();
-            } else {
-              await startPeriodToday();
-            }
-          }}
-        >
-          <Text style={styles.mainButtonText}>
-            {isPeriodActive ? 'המחזור נגמר היום' : 'התחיל לי מחזור היום'}
-          </Text>
+        <Pressable style={styles.primaryBtn} onPress={() => void handlePrimary()}>
+          <Text style={styles.primaryBtnText}>{isPeriodActive ? 'סיים מחזור היום' : 'התחיל לי מחזור היום'}</Text>
         </Pressable>
 
-        <Text style={styles.disclaimer}>
-          * כל החישובים הם הערכה בלבד, ואינם תחליף לייעוץ רפואי
+        <Pressable style={styles.debugBtn} onPress={handleDebugPress}>
+          <Text style={styles.debugBtnText}>דיבוג</Text>
+        </Pressable>
+
+        <Text style={styles.disclaimer}>כל החישובים הם הערכה בלבד, ואינם תחליף לייעוץ רפואי</Text>
+      </View>
+
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>ציר זמן</Text>
+
+        <View style={styles.rowBox}>
+          <Text style={styles.rowLabel}>מחזור הבא</Text>
+          <Text style={styles.rowValue}>{nextPeriodStart ? formatDateIL(nextPeriodStart) : '-'}</Text>
+        </View>
+
+        <View style={styles.rowBox}>
+          <Text style={styles.rowLabel}>חלון פוריות</Text>
+          <Text style={styles.rowValue}>
+            {fertileWindow ? `${formatDateIL(fertileWindow.start)} - ${formatDateIL(fertileWindow.end)}` : '-'}
+          </Text>
+        </View>
+
+        <View style={styles.rowBox}>
+          <Text style={styles.rowLabel}>ביוץ</Text>
+          <Text style={styles.rowValue}>{ovulationDate ? formatDateIL(ovulationDate) : '-'}</Text>
+        </View>
+
+        <Text style={styles.cardNote}>
+          אם הוזנה בדיקת ביוץ חיובית, הביוץ והחלון המחושב יתעדכנו בהתאם. אחרת החישוב לפי אורך המחזור.
         </Text>
       </View>
 
-      {/* TIMELINE MINI */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>ציר זמן</Text>
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>היום</Text>
 
-        <View style={styles.timeline}>
-          <View style={styles.timelineItem}>
-            <Text style={styles.timelineLabel}>מחזור הבא</Text>
-            <Text style={styles.timelineValue}>
-              {nextPeriodDate ? formatDate(nextPeriodDate) : '-'}
-            </Text>
+        <View style={styles.badgesRow}>
+          <View style={[styles.badge, inPeriodByCalc && styles.badgeOn]}>
+            <Text style={[styles.badgeText, inPeriodByCalc && styles.badgeTextOn]}>מחזור (חישוב)</Text>
           </View>
 
-          <View style={styles.timelineItem}>
-            <Text style={styles.timelineLabel}>חלון פוריות</Text>
-            <Text style={styles.timelineValue}>
-              {fertilityWindow
-                ? `${formatDate(fertilityWindow.start)} - ${formatDate(fertilityWindow.end)}`
-                : '-'}
-            </Text>
-          </View>
-
-          <View style={styles.timelineItem}>
-            <Text style={styles.timelineLabel}>ביוץ</Text>
-            <Text style={styles.timelineValue}>
-              {ovulationDate ? formatDate(ovulationDate) : '-'}
-            </Text>
+          <View style={[styles.badge, isInFertileWindow && styles.badgeOnGreen]}>
+            <Text style={[styles.badgeText, isInFertileWindow && styles.badgeTextOn]}>חלון פוריות</Text>
           </View>
         </View>
-      </View>
 
-      {/* DETAILS */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>פרטים</Text>
-
-        <View style={styles.row}>
-          <Text style={styles.rowLabel}>אורך מחזור ממוצע</Text>
-          <Text style={styles.rowValue}>{cycleLength} ימים</Text>
-        </View>
-
-        <View style={styles.row}>
-          <Text style={styles.rowLabel}>מטרה</Text>
-          <Text style={styles.rowValue}>{goal || '-'}</Text>
-        </View>
-
-        <View style={styles.row}>
-          <Text style={styles.rowLabel}>תאריך לידה</Text>
-          <Text style={styles.rowValue}>
-            {birthday ? new Date(birthday).toLocaleDateString('he-IL') : '-'}
-          </Text>
-        </View>
-      </View>
-
-      {/* NAV */}
-      <View style={styles.bottomActions}>
-        <Pressable style={styles.linkBtn} onPress={() => router.push('/history')}>
-          <Text style={styles.linkBtnText}>היסטוריה</Text>
-        </Pressable>
-
-        <Pressable
-          style={[styles.linkBtn, styles.dangerBtn]}
-          onPress={async () => {
-            await resetUserData();
-            router.replace('/');
-          }}
-        >
-          <Text style={[styles.linkBtnText, styles.dangerText]}>התחלה מחדש</Text>
-        </Pressable>
+        <Text style={styles.cardNote}>טיפ: כדי לדייק, היכנס ליום ביוץ והזן בדיקת ביוץ כחיובית.</Text>
       </View>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {},
-
+  container: { flex: 1, backgroundColor: '#fff', paddingHorizontal: 18 },
   content: { paddingBottom: 28 },
 
-  appTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    textAlign: 'center',
+  screenTitle: {
     marginTop: 10,
+    marginBottom: 12,
+    fontSize: 20,
+    fontWeight: '900',
+    textAlign: 'center',
+    writingDirection: 'rtl',
+  },
+
+  cardTop: {
+    borderWidth: 1,
+    borderColor: '#eee',
+    borderRadius: 18,
+    padding: 16,
+    backgroundColor: '#f6f2ff',
     marginBottom: 12,
   },
 
-  card: {
-    borderRadius: 18,
-    padding: 18,
-    borderWidth: 1,
-    borderColor: '#eee',
-    backgroundColor: '#faf7ff',
-  },
-
   bigTitle: {
-    fontSize: 28,
-    fontWeight: '800',
+    fontSize: 22,
+    fontWeight: '900',
     textAlign: 'center',
     writingDirection: 'rtl',
-    marginBottom: 8,
+    marginBottom: 6,
   },
 
-  subText: {
-    fontSize: 14,
+  smallLine: {
+    fontSize: 13,
+    color: '#333',
+    fontWeight: '700',
     textAlign: 'center',
     writingDirection: 'rtl',
-    marginTop: 4,
-    color: '#444',
+    marginTop: 2,
   },
 
-  highlight: {
+  goalLine: {
     marginTop: 10,
     fontSize: 14,
+    fontWeight: '900',
+    color: '#6a1b9a',
     textAlign: 'center',
     writingDirection: 'rtl',
-    color: '#6a1b9a',
-    fontWeight: '900',
   },
 
-  mainButton: {
-    marginTop: 16,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    borderRadius: 14,
+  primaryBtn: {
+    marginTop: 12,
+    backgroundColor: '#6a1b9a',
+    borderRadius: 16,
+    paddingVertical: 16,
     alignItems: 'center',
   },
 
-  mainButtonStart: { backgroundColor: '#6a1b9a' },
-  mainButtonEnd: { backgroundColor: '#e53935' },
-
-  mainButtonText: {
+  primaryBtnText: {
     color: '#fff',
-    fontSize: 18,
-    fontWeight: '800',
+    fontWeight: '900',
+    fontSize: 16,
+    writingDirection: 'rtl',
+  },
+
+  debugBtn: {
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: '#6a1b9a',
+    borderRadius: 12,
+    paddingVertical: 10,
+    alignItems: 'center',
+    backgroundColor: '#fff',
+  },
+
+  debugBtnText: {
+    color: '#6a1b9a',
+    fontWeight: '900',
+    fontSize: 14,
     writingDirection: 'rtl',
   },
 
   disclaimer: {
-    marginTop: 12,
+    marginTop: 8,
     fontSize: 12,
+    color: '#666',
     textAlign: 'center',
     writingDirection: 'rtl',
-    color: '#666',
+    fontWeight: '700',
   },
 
-  section: {
-    marginTop: 18,
+  card: {
+    borderWidth: 1,
+    borderColor: '#eee',
+    borderRadius: 18,
     padding: 14,
+    marginBottom: 12,
+  },
+
+  cardTitle: {
+    fontWeight: '900',
+    fontSize: 16,
+    marginBottom: 10,
+    writingDirection: 'rtl',
+    textAlign: 'right',
+    color: '#111',
+  },
+
+  rowBox: {
+    borderWidth: 1,
+    borderColor: '#eee',
     borderRadius: 16,
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+    marginBottom: 10,
+    flexDirection: 'row-reverse',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#fafafa',
+  },
+
+  rowLabel: {
+    fontWeight: '900',
+    color: '#111',
+    writingDirection: 'rtl',
+    textAlign: 'right',
+  },
+
+  rowValue: {
+    fontWeight: '800',
+    color: '#111',
+    writingDirection: 'rtl',
+    textAlign: 'left',
+  },
+
+  cardNote: {
+    marginTop: 6,
+    fontSize: 12,
+    color: '#666',
+    writingDirection: 'rtl',
+    textAlign: 'right',
+    fontWeight: '700',
+  },
+
+  badgesRow: { flexDirection: 'row-reverse', gap: 10, justifyContent: 'flex-start' },
+
+  badge: {
     borderWidth: 1,
     borderColor: '#eee',
     backgroundColor: '#fff',
-  },
-
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '800',
-    writingDirection: 'rtl',
-    marginBottom: 10,
-  },
-
-  timeline: {
-    gap: 10,
-  },
-
-  timelineItem: {
-    borderRadius: 14,
     paddingVertical: 10,
     paddingHorizontal: 12,
-    backgroundColor: '#fafafa',
-    borderWidth: 1,
-    borderColor: '#f0f0f0',
+    borderRadius: 999,
   },
 
-  timelineLabel: {
-    fontSize: 13,
+  badgeOn: {
+    borderColor: '#ffd0d9',
+    backgroundColor: '#ffe3e8',
+  },
+
+  badgeOnGreen: {
+    borderColor: '#c8f5d6',
+    backgroundColor: '#e9fff0',
+  },
+
+  badgeText: {
     fontWeight: '900',
+    color: '#333',
     writingDirection: 'rtl',
-    color: '#444',
-    textAlign: 'right',
   },
 
-  timelineValue: {
-    marginTop: 2,
-    fontSize: 14,
-    writingDirection: 'rtl',
-    textAlign: 'right',
+  badgeTextOn: {
+    color: '#111',
   },
-
-  row: {
-    flexDirection: 'row-reverse',
-    justifyContent: 'space-between',
-    paddingVertical: 6,
-  },
-
-  rowLabel: { fontSize: 14, fontWeight: '700', writingDirection: 'rtl' },
-  rowValue: { fontSize: 14, writingDirection: 'rtl', color: '#333' },
-
-  bottomActions: { marginTop: 'auto', gap: 10, paddingBottom: 10 },
-  linkBtn: {
-    paddingVertical: 14,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#ddd',
-    alignItems: 'center',
-  },
-  linkBtnText: { fontSize: 16, fontWeight: '800', color: '#6a1b9a' },
-
-  dangerBtn: { borderColor: '#f1b9b9' },
-  dangerText: { color: '#e53935' },
 });
