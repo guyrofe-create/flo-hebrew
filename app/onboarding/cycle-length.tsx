@@ -1,4 +1,3 @@
-// app/onboarding/cycle-length.tsx
 import { useRouter } from 'expo-router';
 import React, { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
@@ -10,30 +9,31 @@ function clampInt(n: number, min: number, max: number) {
   return Math.min(max, Math.max(min, Math.trunc(x)));
 }
 
-export default function CycleLengthScreen() {
+export default function PeriodLengthScreen() {
   const router = useRouter();
-  const { cycleLength } = useUserData();
+  const { periodLength, setPeriodLength } = useUserData();
 
-  const initial = useMemo(() => String(cycleLength || 28), [cycleLength]);
+  const initial = useMemo(() => String(periodLength || 5), [periodLength]);
   const [value, setValue] = useState(initial);
 
   const next = async () => {
-    const v = clampInt(Number(value), 15, 60);
+    const v = clampInt(Number(value), 2, 12);
     setValue(String(v));
-    router.push('/onboarding/period-length' as any);
+    await setPeriodLength(v);
+    router.push('/onboarding/last-period' as any);
   };
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>מה אורך המחזור בדרך כלל?</Text>
-      <Text style={styles.sub}>אם לא בטוחה, אפשר להשאיר 28.</Text>
+      <Text style={styles.title}>כמה ימים הדימום בדרך כלל?</Text>
+      <Text style={styles.sub}>ברירת מחדל: 5</Text>
 
       <TextInput
         style={styles.input}
         keyboardType="number-pad"
         value={value}
         onChangeText={setValue}
-        placeholder="28"
+        placeholder="5"
         textAlign="right"
       />
 

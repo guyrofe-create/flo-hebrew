@@ -26,7 +26,6 @@ export type UserData = {
   isPeriodActive: boolean;
   symptomsByDay: Record<string, DaySymptoms>;
 
-  // חדש: יום נבחר בלוח (לסנכרון בין טאבים). לא נשמר ל-AsyncStorage.
   selectedDayKey: string | null;
   setSelectedDayKey: (key: string | null) => void;
 
@@ -135,15 +134,27 @@ export function UserDataProvider({ children }: { children: ReactNode }) {
         if (map[STORAGE_KEY_BIRTHDAY]) setBirthdayState(map[STORAGE_KEY_BIRTHDAY]);
 
         if (map[STORAGE_KEY_PERIOD_HISTORY]) {
-          const parsed = JSON.parse(map[STORAGE_KEY_PERIOD_HISTORY]);
-          if (Array.isArray(parsed)) setPeriodHistoryState(parsed);
+          try {
+            const parsed = JSON.parse(map[STORAGE_KEY_PERIOD_HISTORY]);
+            if (Array.isArray(parsed)) setPeriodHistoryState(parsed);
+          } catch {
+            // ignore
+          }
         }
 
         if (map[STORAGE_KEY_PERIOD_START]) setPeriodStartState(map[STORAGE_KEY_PERIOD_START]);
         if (map[STORAGE_KEY_PERIOD_LENGTH]) setPeriodLengthState(Number(map[STORAGE_KEY_PERIOD_LENGTH]));
         if (map[STORAGE_KEY_CYCLE_LENGTH_MANUAL]) setCycleLengthManualState(Number(map[STORAGE_KEY_CYCLE_LENGTH_MANUAL]));
         if (map[STORAGE_KEY_IS_PERIOD_ACTIVE]) setIsPeriodActive(map[STORAGE_KEY_IS_PERIOD_ACTIVE] === 'true');
-        if (map[STORAGE_KEY_SYMPTOMS_BY_DAY]) setSymptomsByDayState(JSON.parse(map[STORAGE_KEY_SYMPTOMS_BY_DAY]));
+
+        if (map[STORAGE_KEY_SYMPTOMS_BY_DAY]) {
+          try {
+            setSymptomsByDayState(JSON.parse(map[STORAGE_KEY_SYMPTOMS_BY_DAY]));
+          } catch {
+            // ignore
+          }
+        }
+
         if (map[STORAGE_KEY_DISCLAIMER_ACCEPTED]) setDisclaimerAccepted(map[STORAGE_KEY_DISCLAIMER_ACCEPTED] === 'true');
         if (map[STORAGE_KEY_ADVANCED_TRACKING]) setAdvancedTrackingState(map[STORAGE_KEY_ADVANCED_TRACKING] === 'true');
       } finally {
@@ -208,10 +219,18 @@ export function UserDataProvider({ children }: { children: ReactNode }) {
 
   const addPeriodDate = async (date: string) => {
     const normalized = toNoonIso(date);
+
     setPeriodHistoryState(prev => {
       const updated = uniqueSortedNewestToOldest([normalized, ...prev]);
       AsyncStorage.setItem(STORAGE_KEY_PERIOD_HISTORY, JSON.stringify(updated));
       return updated;
+    });
+
+    // לא חובה יותר ל-isSetupComplete, אבל נשמור גם periodStart אם ריק כדי להקטין בלבול עתידי
+    setPeriodStartState(prev => {
+      if (prev) return prev;
+      AsyncStorage.setItem(STORAGE_KEY_PERIOD_START, normalized);
+      return normalized;
     });
   };
 
@@ -265,6 +284,7 @@ export function UserDataProvider({ children }: { children: ReactNode }) {
       STORAGE_KEY_DISCLAIMER_ACCEPTED,
       STORAGE_KEY_ADVANCED_TRACKING,
     ]);
+
     setGoalState(null);
     setBirthdayState(null);
     setPeriodStartState(null);
@@ -289,7 +309,12 @@ export function UserDataProvider({ children }: { children: ReactNode }) {
     return avg ?? cycleLengthManual ?? 28;
   }, [cycleDatesOldestToNewest, cycleLengthManual]);
 
-  const isSetupComplete = useMemo(() => !!(goal && periodStart), [goal, periodStart]);
+  // שינוי מרכזי: אונבורדינג נחשב מושלם אם יש מטרה + לפחות מחזור אחד
+  const isSetupComplete = useMemo(() => {
+    const hasGoal = !!goal;
+    const hasAnyPeriod = (Array.isArray(periodHistory) && periodHistory.length > 0) || !!periodStart;
+    return hasGoal && hasAnyPeriod;
+  }, [goal, periodHistory, periodStart]);
 
   return (
     <UserDataContext.Provider

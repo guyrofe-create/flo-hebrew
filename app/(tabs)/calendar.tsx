@@ -151,32 +151,29 @@ export default function CalendarScreen() {
       m.set(key, null);
     }
 
-    // דיוק לפי בדיקת ביוץ חיובית: מחפשים מתוך כל symptomsByDay במחזור הנוכחי
-    if (advancedTracking) {
-      const positiveKey = findLatestPositiveOvulationKeyInCurrentCycle(symptomsByDay, lastPeriodStart, cycleLength);
+    // דיוק לפי ביוץ חיובי: תמיד מתחשב אם קיים, גם כשהמתג כבוי
+    const positiveKey = findLatestPositiveOvulationKeyInCurrentCycle(symptomsByDay, lastPeriodStart, cycleLength);
 
-      if (positiveKey) {
-        // מנקים רק fertile/ovulation שמגיעים מהחישוב
-        for (const d of daysGrid) {
-          const k = formatKey(d);
-          const curr = m.get(k);
-          if (curr === 'fertile' || curr === 'ovulation') m.set(k, null);
-        }
+    if (positiveKey) {
+      for (const d of daysGrid) {
+        const k = formatKey(d);
+        const curr = m.get(k);
+        if (curr === 'fertile' || curr === 'ovulation') m.set(k, null);
+      }
 
-        const ovuDate = normalizeNoon(new Date(isoNoonFromKey(positiveKey)));
+      const ovuDate = normalizeNoon(new Date(isoNoonFromKey(positiveKey)));
 
-        for (const d of daysGrid) {
-          const k = formatKey(d);
-          const diff = daysBetween(normalizeNoon(d), ovuDate);
+      for (const d of daysGrid) {
+        const k = formatKey(d);
+        const diff = daysBetween(normalizeNoon(d), ovuDate);
 
-          if (diff === 0) m.set(k, 'ovulation');
-          else if (diff >= -4 && diff <= 1) m.set(k, 'fertile');
-        }
+        if (diff === 0) m.set(k, 'ovulation');
+        else if (diff >= -4 && diff <= 1) m.set(k, 'fertile');
       }
     }
 
     return m;
-  }, [lastPeriodStart, cycleLength, periodLength, daysGrid, advancedTracking, symptomsByDay]);
+  }, [lastPeriodStart, cycleLength, periodLength, daysGrid, symptomsByDay]);
 
   const goPrevMonth = () => {
     const d = new Date(month);
@@ -230,6 +227,10 @@ export default function CalendarScreen() {
     if (!selectedKey) return {};
     return symptomsByDay[selectedKey] || {};
   }, [symptomsByDay, selectedKey]);
+
+  const hasPositiveInCycle = useMemo(() => {
+    return !!findLatestPositiveOvulationKeyInCurrentCycle(symptomsByDay, lastPeriodStart, cycleLength);
+  }, [symptomsByDay, lastPeriodStart, cycleLength]);
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
@@ -310,12 +311,12 @@ export default function CalendarScreen() {
 
         <View style={styles.legendRow}>
           <View style={[styles.legendDot, styles.dotFertile]} />
-          <Text style={styles.legendText}>חלון פוריות (חישוב)</Text>
+          <Text style={styles.legendText}>חלון פוריות</Text>
         </View>
 
         <View style={styles.legendRow}>
           <View style={[styles.legendDot, styles.dotOvulation]} />
-          <Text style={styles.legendText}>ביוץ משוער (חישוב)</Text>
+          <Text style={styles.legendText}>ביוץ</Text>
         </View>
 
         <View style={styles.legendRow}>
@@ -333,9 +334,15 @@ export default function CalendarScreen() {
           <Text style={styles.legendText}>הוזנה תמונה</Text>
         </View>
 
-        {advancedTracking && (
+        {hasPositiveInCycle && (
           <Text style={styles.legendHint}>
-            מעקב מתקדם פעיל: אם תסומן בדיקת ביוץ positive ביום מסוים, הביוץ וחלון הפוריות יעודכנו סביב אותו יום.
+            זוהתה בדיקת ביוץ חיובית במחזור הנוכחי: הביוץ וחלון הפוריות מחושבים סביב היום שסומן כחיובי.
+          </Text>
+        )}
+
+        {!advancedTracking && (
+          <Text style={styles.legendHint}>
+            מעקב מתקדם כבוי: זה משפיע רק על תצוגת שדות נוספים. החישובים עדיין מתחשבים בנתונים מתקדמים שכבר הוזנו.
           </Text>
         )}
       </View>

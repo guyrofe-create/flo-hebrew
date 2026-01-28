@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import type { DaySymptoms } from '../../context/UserDataContext';
 import { useUserData } from '../../context/UserDataContext';
 import { addDays, isoNoonFromKey, normalizeNoon } from '../../lib/date';
 
@@ -38,10 +39,7 @@ function parseNoonFromDayKey(key: string): Date | null {
   }
 }
 
-function getLatestPeriodStart(
-  periodHistory: string[] | undefined,
-  periodStart: string | null | undefined
-): Date | null {
+function getLatestPeriodStart(periodHistory: string[] | undefined, periodStart: string | null | undefined): Date | null {
   let best: Date | null = null;
 
   if (Array.isArray(periodHistory) && periodHistory.length) {
@@ -60,15 +58,15 @@ function getLatestPeriodStart(
   return best;
 }
 
-function findLatestPositiveOvulationSince(
-  symptomsByDay: Record<string, any> | undefined,
-  since: Date | null,
-  until: Date
+function findLatestPositiveOvulationInCurrentCycle(
+  symptomsByDay: Record<string, DaySymptoms> | undefined,
+  lastPeriodStart: Date | null,
+  cycleLength: number
 ): Date | null {
-  if (!symptomsByDay || !since) return null;
+  if (!symptomsByDay || !lastPeriodStart || !cycleLength || cycleLength <= 0) return null;
 
-  const start = normalizeNoon(since);
-  const end = normalizeNoon(until);
+  const start = normalizeNoon(lastPeriodStart);
+  const end = normalizeNoon(addDays(start, cycleLength));
 
   let best: Date | null = null;
 
@@ -80,7 +78,7 @@ function findLatestPositiveOvulationSince(
     const d = parseNoonFromDayKey(key);
     if (!d) continue;
 
-    if (d.getTime() < start.getTime() || d.getTime() > end.getTime()) continue;
+    if (d.getTime() < start.getTime() || d.getTime() >= end.getTime()) continue;
 
     if (!best || d.getTime() > best.getTime()) best = d;
   }
@@ -113,8 +111,8 @@ export default function DashboardScreen() {
   }, [lastPeriodStart, periodLength]);
 
   const latestPositiveOvulation = useMemo(() => {
-    return findLatestPositiveOvulationSince(symptomsByDay, lastPeriodStart, today);
-  }, [symptomsByDay, lastPeriodStart, today]);
+    return findLatestPositiveOvulationInCurrentCycle(symptomsByDay, lastPeriodStart, cycleLength);
+  }, [symptomsByDay, lastPeriodStart, cycleLength]);
 
   const ovulationDate = useMemo(() => {
     if (latestPositiveOvulation) return latestPositiveOvulation;
@@ -165,13 +163,15 @@ export default function DashboardScreen() {
 
   const goalLabel = useMemo(() => {
     if (!goal) return 'מעקב כללי';
-    return goal === 'pregnancy' ? 'כניסה להריון' : goal === 'contraception' ? 'מניעה' : 'מעקב כללי';
+    if (goal === 'conceive') return 'כניסה להריון';
+    if (goal === 'prevent') return 'מניעה';
+    return 'מעקב כללי';
   }, [goal]);
 
   const handleDebugPress = () => {
     const lp = lastPeriodStart ? formatDateIL(lastPeriodStart) : '-';
     const ov = latestPositiveOvulation ? formatDateIL(latestPositiveOvulation) : '-';
-    Alert.alert('דיבוג (זמני)', `תחילת מחזור אחרון: ${lp}\nבדיקת ביוץ חיובית אחרונה: ${ov}`);
+    Alert.alert('דיבוג (זמני)', `תחילת מחזור אחרון: ${lp}\nבדיקת ביוץ חיובית במחזור הנוכחי: ${ov}`);
   };
 
   return (
@@ -219,7 +219,7 @@ export default function DashboardScreen() {
         </View>
 
         <Text style={styles.cardNote}>
-          אם הוזנה בדיקת ביוץ חיובית, הביוץ והחלון המחושב יתעדכנו בהתאם. אחרת החישוב לפי אורך המחזור.
+          אם הוזנה בדיקת ביוץ חיובית במחזור הנוכחי, הביוץ והחלון מחושבים סביב היום שסומן כחיובי. אחרת החישוב לפי אורך המחזור.
         </Text>
       </View>
 
@@ -228,7 +228,7 @@ export default function DashboardScreen() {
 
         <View style={styles.badgesRow}>
           <View style={[styles.badge, inPeriodByCalc && styles.badgeOn]}>
-            <Text style={[styles.badgeText, inPeriodByCalc && styles.badgeTextOn]}>מחזור (חישוב)</Text>
+            <Text style={[styles.badgeText, inPeriodByCalc && styles.badgeTextOn]}>מחזור</Text>
           </View>
 
           <View style={[styles.badge, isInFertileWindow && styles.badgeOnGreen]}>
@@ -236,7 +236,7 @@ export default function DashboardScreen() {
           </View>
         </View>
 
-        <Text style={styles.cardNote}>טיפ: כדי לדייק, היכנס ליום ביוץ והזן בדיקת ביוץ כחיובית.</Text>
+        <Text style={styles.cardNote}>טיפ: כדי לדייק, היכנסי ליום והזיני בדיקת ביוץ כחיובית כאשר זה רלוונטי.</Text>
       </View>
     </ScrollView>
   );
