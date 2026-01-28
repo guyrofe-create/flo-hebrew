@@ -118,7 +118,7 @@ export async function scheduleDailyReminder(hour: number, minute: number): Promi
   const id = await Notifications.scheduleNotificationAsync({
     content: {
       title: 'תזכורת יומית',
-      body: 'כדאי לעדכן סימפטומים והערות - זה משפר את הדיוק של המעקב.',
+      body: 'כדאי לעדכן סימפטומים והערות, זה משפר את הדיוק של המעקב.',
       sound: true,
     },
     trigger: {
@@ -194,6 +194,54 @@ export async function getPredictedPeriodReminderEnabled(): Promise<boolean> {
   }
 }
 
+/**
+ * חדש: תזמון התראת "מחזור צפוי בקרוב" לפי תאריך מחזור צפוי שכבר חושב באפליקציה (forecast.nextPeriodStart).
+ * זה מבטיח שההתראה תואמת לדשבורד (כולל התאמות לפי ביוץ חיובי).
+ */
+export async function schedulePredictedPeriodReminderForNextPeriodStart(nextPeriodStartIso: string): Promise<void> {
+  await cancelPredictedPeriodReminder();
+
+  const nextStart = normalizeNoon(new Date(nextPeriodStartIso));
+  if (Number.isNaN(nextStart.getTime())) return;
+
+  const { hour, minute } = await getDailyReminderTime();
+  const now = new Date();
+
+  // ברירת מחדל: יום לפני המחזור הצפוי, בשעה השמורה
+  let reminderDay = addDays(nextStart, -1);
+  let triggerDate = buildTriggerDate(reminderDay, hour, minute);
+
+  // אם כבר עבר, ננסה באותו יום של המחזור הצפוי בשעה השמורה
+  if (triggerDate.getTime() <= now.getTime() + 60_000) {
+    reminderDay = addDays(nextStart, 0);
+    triggerDate = buildTriggerDate(reminderDay, hour, minute);
+  }
+
+  // אם גם זה עבר, נזיז למחר בשעה השמורה
+  if (triggerDate.getTime() <= now.getTime() + 60_000) {
+    const tomorrow = addDays(normalizeNoon(new Date()), 1);
+    triggerDate = buildTriggerDate(tomorrow, hour, minute);
+  }
+
+  const id = await Notifications.scheduleNotificationAsync({
+    content: {
+      title: 'מחזור צפוי בקרוב',
+      body: 'לפי הנתונים שהוזנו, ייתכן שמחר יתחיל מחזור. רוצה לעדכן סימפטומים או להתכונן מראש?',
+      sound: true,
+    },
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.DATE,
+      date: triggerDate,
+    },
+  });
+
+  await setStoredPredictedPeriodId(id);
+}
+
+/**
+ * ישן: נשאר לתאימות לאחור, אם עוד יש מקומות שקוראים לו.
+ * מומלץ שבסוף לא נשתמש בו, אלא ב schedulePredictedPeriodReminderForNextPeriodStart.
+ */
 export async function schedulePredictedPeriodReminder(lastPeriodStartIso: string, cycleLength: number): Promise<void> {
   await cancelPredictedPeriodReminder();
 

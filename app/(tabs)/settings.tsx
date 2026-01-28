@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { useUserData } from '../../context/UserDataContext';
+import { computeCycleForecast } from '../../lib/cycleForecast';
 import { normalizeNoon } from '../../lib/date';
 import {
     cancelDailyReminder,
@@ -26,6 +27,11 @@ function pad2(n: number) {
   return String(n).padStart(2, '0');
 }
 
+function diffDays(a: Date, b: Date) {
+  const ms = normalizeNoon(b).getTime() - normalizeNoon(a).getTime();
+  return Math.round(ms / (24 * 60 * 60 * 1000));
+}
+
 export default function SettingsScreen() {
   const router = useRouter();
 
@@ -34,6 +40,8 @@ export default function SettingsScreen() {
     periodHistory,
     periodStart,
     cycleLength,
+    periodLength,
+    symptomsByDay,
     advancedTracking,
     setAdvancedTracking,
   } = useUserData();
@@ -55,6 +63,23 @@ export default function SettingsScreen() {
     return dt.toISOString();
   }, [periodHistory, periodStart]);
 
+  const effectiveCycleLengthForReminders = useMemo(() => {
+    const forecast = computeCycleForecast({
+      periodHistory,
+      periodStart,
+      cycleLength,
+      periodLength,
+      symptomsByDay,
+    });
+
+    if (forecast.lastPeriodStart && forecast.nextPeriodStart) {
+      const d = diffDays(forecast.lastPeriodStart, forecast.nextPeriodStart);
+      if (Number.isFinite(d) && d >= 18 && d <= 60) return d;
+    }
+
+    return cycleLength;
+  }, [periodHistory, periodStart, cycleLength, periodLength, symptomsByDay]);
+
   useEffect(() => {
     (async () => {
       const [scheduled, t, pe, ps] = await Promise.all([
@@ -66,11 +91,23 @@ export default function SettingsScreen() {
 
       setDailyEnabled(scheduled);
       setDailyTime(t);
-
       setPredEnabled(pe);
       setPredScheduled(ps);
     })();
   }, []);
+
+  const reschedulePredictedIfNeeded = async () => {
+    const enabled = await getPredictedPeriodReminderEnabled();
+    if (!enabled) return;
+    if (!lastPeriodStartIso) return;
+
+    try {
+      await schedulePredictedPeriodReminder(lastPeriodStartIso, effectiveCycleLengthForReminders);
+      setPredScheduled(true);
+    } catch {
+      // ignore
+    }
+  };
 
   const toggleDaily = async () => {
     if (!dailyEnabled) {
@@ -82,26 +119,14 @@ export default function SettingsScreen() {
 
       await scheduleDailyReminder(dailyTime.hour, dailyTime.minute);
       setDailyEnabled(true);
-      Alert.alert('הופעל', `תזכורת יומית הופעלה ל-${timeLabel}.`);
+      Alert.alert('הופעל', `תזכורת יומית הופעלה לשעה ${timeLabel}.`);
+      await reschedulePredictedIfNeeded();
       return;
     }
 
     await cancelDailyReminder();
     setDailyEnabled(false);
     Alert.alert('בוטל', 'תזכורת יומית בוטלה.');
-  };
-
-  const reschedulePredictedIfNeeded = async () => {
-    const enabled = await getPredictedPeriodReminderEnabled();
-    if (!enabled) return;
-    if (!lastPeriodStartIso) return;
-
-    try {
-      await schedulePredictedPeriodReminder(lastPeriodStartIso, cycleLength);
-      setPredScheduled(true);
-    } catch {
-      // ignore
-    }
   };
 
   const onPickTime = async (selectedDate?: Date) => {
@@ -116,7 +141,7 @@ export default function SettingsScreen() {
     setDailyTime({ hour: h, minute: m });
     await setDailyReminderTime(h, m);
 
-    setShowPicker(false);
+    if (Platform.OS === 'android') setShowPicker(false);
 
     if (dailyEnabled) {
       const ok = await ensureNotifPermissions();
@@ -126,9 +151,9 @@ export default function SettingsScreen() {
       }
 
       await scheduleDailyReminder(h, m);
-      Alert.alert('עודכן', `שעת התזכורת עודכנה ל-${pad2(h)}:${pad2(m)}.`);
+      Alert.alert('עודכן', `שעת התזכורת עודכנה ל ${pad2(h)}:${pad2(m)}.`);
     } else {
-      Alert.alert('עודכן', `שעת התזכורת נשמרה ל-${pad2(h)}:${pad2(m)}. הפעל את התזכורת כדי שתרוץ.`);
+      Alert.alert('עודכן', `שעת התזכורת נשמרה ל ${pad2(h)}:${pad2(m)}. צריך להפעיל תזכורת כדי שתרוץ.`);
     }
 
     await reschedulePredictedIfNeeded();
@@ -152,7 +177,7 @@ export default function SettingsScreen() {
       await setPredictedPeriodReminderEnabled(true);
       setPredEnabled(true);
 
-      await schedulePredictedPeriodReminder(lastPeriodStartIso, cycleLength);
+      await schedulePredictedPeriodReminder(lastPeriodStartIso, effectiveCycleLengthForReminders);
       setPredScheduled(true);
 
       Alert.alert('הופעל', 'תזכורת למחזור צפוי הופעלה. התראה תישלח יום לפני המחזור המשוער.');
@@ -174,8 +199,41 @@ export default function SettingsScreen() {
     Alert.alert('DEBUG - Scheduled Notifications', txt);
   };
 
-  const toggleAdvancedTracking = async (v: boolean) => {
-    await setAdvancedTracking(v);
+  const handleResetConfirmed = async () => {
+    try {
+      setShowPicker(false);
+
+      // לבטל התראות ולהוריד דגלים שמורים לפני איפוס, כדי שלא יישאר משהו "מופעל"
+      await Promise.all([
+        cancelDailyReminder(),
+        cancelPredictedPeriodReminder(),
+        setPredictedPeriodReminderEnabled(false),
+      ]);
+
+      // איפוס נתונים (כולל דיסקליימר בתוך ה-Context)
+      await resetUserData();
+
+      // רענון מצב מסך הגדרות
+      setDailyEnabled(false);
+      setPredEnabled(false);
+      setPredScheduled(false);
+
+      // לצאת החוצה למסך הדיסקליימר (חשוב כדי לא להישאר בטאבים)
+      router.replace('/disclaimer');
+    } catch {
+      Alert.alert('שגיאה', 'לא הצלחתי לאפס את הנתונים. נסה שוב.');
+    }
+  };
+
+  const onReset = () => {
+    Alert.alert('איפוס נתונים', 'למחוק את כל הנתונים מהאפליקציה?', [
+      { text: 'ביטול', style: 'cancel' },
+      {
+        text: 'מחק הכל',
+        style: 'destructive',
+        onPress: () => void handleResetConfirmed(),
+      },
+    ]);
   };
 
   return (
@@ -192,108 +250,80 @@ export default function SettingsScreen() {
         <View style={styles.row}>
           <View style={styles.rowTextWrap}>
             <Text style={styles.rowTitle}>מעקב מתקדם</Text>
-            <Text style={styles.rowSub}>
-              מציג שדות נוספים ביומן: הפרשות, יחסים, בדיקות ביוץ, חום בסיסי (BBT).
-            </Text>
+            <Text style={styles.rowSub}>מציג שדות נוספים ביומן: הפרשות, יחסים, בדיקות ביוץ, חום בסיסי (BBT).</Text>
           </View>
 
-          <Switch
-            value={advancedTracking}
-            onValueChange={(v) => {
-              void toggleAdvancedTracking(v);
-            }}
-          />
+          <Switch value={advancedTracking} onValueChange={(v) => void setAdvancedTracking(v)} />
         </View>
 
         <Text style={styles.cardNote}>
-          אפשר לכבות בכל רגע. הנתונים שנשמרו נשארים, ורק התצוגה משתנה.
+          אפשר לכבות בכל רגע. הנתונים שנשמרו נשארים, והחישובים עדיין מתחשבים בנתונים מתקדמים שכבר הוזנו. המתג משפיע בעיקר על תצוגת שדות נוספים.
         </Text>
       </View>
 
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>תזכורות</Text>
+        <Text style={styles.cardTitle}>התראות</Text>
 
-        <Pressable style={[styles.btn, dailyEnabled ? styles.btnOn : styles.btnOff]} onPress={toggleDaily}>
-          <Text style={[styles.btnText, dailyEnabled ? styles.btnTextOn : styles.btnTextOff]}>
-            {dailyEnabled ? `כיבוי תזכורת יומית (${timeLabel})` : `הפעלת תזכורת יומית (${timeLabel})`}
-          </Text>
-        </Pressable>
+        <View style={styles.row}>
+          <View style={styles.rowTextWrap}>
+            <Text style={styles.rowTitle}>תזכורת יומית</Text>
+            <Text style={styles.rowSub}>תזכורת קצרה לעדכון סימפטומים והערות.</Text>
+          </View>
 
-        <Pressable style={[styles.btn, styles.timeBtn]} onPress={() => setShowPicker(true)}>
-          <Text style={[styles.btnText, styles.timeText]}>שינוי שעת תזכורת ({timeLabel})</Text>
+          <Switch value={dailyEnabled} onValueChange={() => void toggleDaily()} />
+        </View>
+
+        <Pressable style={[styles.btn, { marginBottom: 0 }]} onPress={() => setShowPicker(true)}>
+          <Text style={styles.btnText}>שעה: {timeLabel}</Text>
         </Pressable>
 
         {showPicker && (
-          <DateTimePicker
-            value={new Date(2000, 0, 1, dailyTime.hour, dailyTime.minute, 0)}
-            mode="time"
-            is24Hour
-            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-            onChange={(_event, selectedDate) => {
-              void onPickTime(selectedDate ?? undefined);
-            }}
-          />
+          <View style={{ marginTop: 10 }}>
+            <DateTimePicker
+              value={new Date(2000, 0, 1, dailyTime.hour, dailyTime.minute, 0, 0)}
+              mode="time"
+              display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+              is24Hour
+              onChange={(_, d) => void onPickTime(d ?? undefined)}
+            />
+
+            {Platform.OS === 'ios' && (
+              <Pressable style={[styles.btn, { marginTop: 10 }]} onPress={() => setShowPicker(false)}>
+                <Text style={styles.btnText}>סגור</Text>
+              </Pressable>
+            )}
+          </View>
         )}
 
-        <View style={styles.sep} />
+        <View style={[styles.row, { marginTop: 12 }]}>
+          <View style={styles.rowTextWrap}>
+            <Text style={styles.rowTitle}>התראה למחזור צפוי</Text>
+            <Text style={styles.rowSub}>
+              התראה יום לפני מחזור משוער. אם הוזנה בדיקת ביוץ חיובית במחזור הנוכחי, החישוב יתבסס עליה.
+            </Text>
+          </View>
 
-        <Pressable style={[styles.btn, predEnabled ? styles.btnOn : styles.btnOff]} onPress={togglePredicted}>
-          <Text style={[styles.btnText, predEnabled ? styles.btnTextOn : styles.btnTextOff]}>
-            {predEnabled
-              ? `כיבוי תזכורת למחזור צפוי (${predScheduled ? 'מתוזמן' : 'לא מתוזמן'})`
-              : 'הפעלת תזכורת למחזור צפוי'}
-          </Text>
-        </Pressable>
+          <Switch value={predEnabled} onValueChange={() => void togglePredicted()} />
+        </View>
 
-        <Text style={styles.cardNote}>
-          התזכורת למחזור צפוי נשלחת יום לפני המחזור המשוער, לפי הנתונים שהוזנו באפליקציה.
-        </Text>
+        <Text style={styles.cardNote}>מצב מתוזמן: {predEnabled ? (predScheduled ? 'כן' : 'מופעל אבל לא מתוזמן') : 'כבוי'}</Text>
 
         {__DEV__ && (
-          <Pressable style={[styles.btn, styles.debugBtn]} onPress={runDebug}>
-            <Text style={[styles.btnText, styles.debugText]}>DEBUG: הצג התראות מתוזמנות</Text>
+          <Pressable style={[styles.btn, { marginTop: 10 }]} onPress={() => void runDebug()}>
+            <Text style={styles.btnText}>דיבוג התראות (DEV)</Text>
           </Pressable>
         )}
-
-        <Text style={styles.cardNote}>
-          התזכורת היומית נועדה להזכיר לעדכן סימפטומים והערות כדי שהמעקב יהיה מדויק יותר.
-        </Text>
       </View>
 
       <View style={styles.card}>
-        <Pressable style={[styles.btn, styles.docBtn]} onPress={() => router.push('/about' as any)}>
-          <Text style={[styles.btnText, styles.docText]}>אודות</Text>
+        <Text style={styles.cardTitle}>נתונים</Text>
+
+        <Pressable style={[styles.btn, styles.dangerBtn]} onPress={onReset}>
+          <Text style={[styles.btnText, styles.dangerText]}>איפוס נתונים</Text>
         </Pressable>
 
-        <Pressable style={[styles.btn, styles.docBtn]} onPress={() => router.push('/legal')}>
-          <Text style={[styles.btnText, styles.docText]}>מידע משפטי</Text>
-        </Pressable>
-
-        <Pressable style={[styles.btn, styles.docBtn]} onPress={() => router.push('/privacy')}>
-          <Text style={[styles.btnText, styles.docText]}>מדיניות פרטיות</Text>
-        </Pressable>
-
-        <Text style={styles.cardNote}>מומלץ לקרוא לפני שימוש. המסמכים זמינים גם מהדיסקליימר במסך הפתיחה.</Text>
+        <Text style={styles.cardNote}>מוחק מחזורים, סימפטומים, הגדרות והתראות.</Text>
       </View>
-
-      <Pressable
-        style={[styles.btn, styles.danger]}
-        onPress={async () => {
-          Alert.alert('איפוס', 'לאפס את כל הנתונים ולהתחיל מחדש?', [
-            { text: 'ביטול', style: 'cancel' },
-            {
-              text: 'אפס',
-              style: 'destructive',
-              onPress: async () => {
-                await resetUserData();
-                router.replace('/');
-              },
-            },
-          ]);
-        }}
-      >
-        <Text style={[styles.btnText, styles.dangerText]}>איפוס והתחלה מחדש</Text>
-      </Pressable>
 
       <Text style={styles.note}>בהמשך נוסיף כאן: התראת חלון פוריות ועוד.</Text>
     </ScrollView>
@@ -303,6 +333,7 @@ export default function SettingsScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff', padding: 20 },
   content: { paddingBottom: 28 },
+
   title: {
     fontSize: 22,
     fontWeight: '900',
@@ -311,6 +342,7 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     writingDirection: 'rtl',
   },
+
   btn: {
     paddingVertical: 16,
     borderRadius: 16,
@@ -318,16 +350,20 @@ const styles = StyleSheet.create({
     borderColor: '#eee',
     alignItems: 'center',
     marginBottom: 12,
+    backgroundColor: '#fff',
   },
+
   btnText: { fontSize: 16, fontWeight: '900', color: '#6a1b9a', writingDirection: 'rtl' },
 
-  card: {
-    borderWidth: 1,
-    borderColor: '#eee',
-    borderRadius: 18,
-    padding: 14,
-    marginBottom: 12,
+  dangerBtn: {
+    borderColor: '#ffd0d9',
+    backgroundColor: '#ffe3e8',
   },
+
+  dangerText: { color: '#b00020' },
+
+  card: { borderWidth: 1, borderColor: '#eee', borderRadius: 18, padding: 14, marginBottom: 12 },
+
   cardTitle: {
     fontWeight: '900',
     fontSize: 16,
@@ -336,14 +372,8 @@ const styles = StyleSheet.create({
     textAlign: 'right',
     color: '#111',
   },
-  cardNote: {
-    marginTop: 8,
-    fontSize: 12,
-    color: '#666',
-    writingDirection: 'rtl',
-    textAlign: 'right',
-    fontWeight: '700',
-  },
+
+  cardNote: { marginTop: 8, fontSize: 12, color: '#666', writingDirection: 'rtl', textAlign: 'right', fontWeight: '700' },
 
   row: {
     flexDirection: 'row-reverse',
@@ -357,42 +387,10 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     backgroundColor: '#fafafa',
   },
+
   rowTextWrap: { flex: 1 },
-  rowTitle: {
-    fontWeight: '900',
-    fontSize: 15,
-    color: '#111',
-    writingDirection: 'rtl',
-    textAlign: 'right',
-  },
-  rowSub: {
-    marginTop: 4,
-    fontSize: 12,
-    color: '#666',
-    fontWeight: '700',
-    writingDirection: 'rtl',
-    textAlign: 'right',
-    lineHeight: 16,
-  },
-
-  btnOn: { borderColor: '#d9c3ff', backgroundColor: '#efe5ff' },
-  btnOff: { borderColor: '#eee', backgroundColor: '#fff' },
-  btnTextOn: { color: '#2b0b3f' },
-  btnTextOff: { color: '#6a1b9a' },
-
-  timeBtn: { borderColor: '#e8e8e8', backgroundColor: '#fafafa' },
-  timeText: { color: '#111' },
-
-  debugBtn: { borderColor: '#e8e8e8', backgroundColor: '#fafafa' },
-  debugText: { color: '#111' },
-
-  docBtn: { borderColor: '#eee', backgroundColor: '#fafafa' },
-  docText: { color: '#2b0b3f' },
-
-  danger: { borderColor: '#f3c4c4' },
-  dangerText: { color: '#e53935' },
-
-  sep: { height: 1, backgroundColor: '#eee', marginVertical: 8 },
+  rowTitle: { fontWeight: '900', fontSize: 15, color: '#111', writingDirection: 'rtl', textAlign: 'right' },
+  rowSub: { marginTop: 4, fontSize: 12, color: '#666', fontWeight: '700', writingDirection: 'rtl', textAlign: 'right', lineHeight: 16 },
 
   note: { marginTop: 14, fontSize: 12, color: '#666', textAlign: 'center', writingDirection: 'rtl' },
 });

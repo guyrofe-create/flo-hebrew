@@ -2,7 +2,7 @@
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useRouter } from 'expo-router';
 import React, { useMemo, useState } from 'react';
-import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useUserData } from '../../context/UserDataContext';
 import { normalizeNoon } from '../../lib/date';
 
@@ -73,7 +73,12 @@ export default function LastPeriodScreen() {
   }, [periodHistory]);
 
   return (
-    <View style={styles.container}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.content}
+      showsVerticalScrollIndicator={false}
+      keyboardShouldPersistTaps="handled"
+    >
       <Text style={styles.title}>מתי התחיל המחזור האחרון</Text>
       <Text style={styles.subtitle}>אפשר לשנות בהמשך מההגדרות</Text>
 
@@ -81,13 +86,7 @@ export default function LastPeriodScreen() {
         <Text style={styles.cardTitle}>בחרי תאריך</Text>
 
         <View style={styles.pickerWrap}>
-          <DateTimePicker
-            value={pickedDate}
-            mode="date"
-            display="spinner"
-            onChange={onChange}
-            maximumDate={today}
-          />
+          <DateTimePicker value={pickedDate} mode="date" display="spinner" onChange={onChange} maximumDate={today} />
         </View>
 
         <Text style={styles.pickedText}>נבחר: {formatIL(pickedDate)}</Text>
@@ -130,12 +129,14 @@ export default function LastPeriodScreen() {
       </Pressable>
 
       <Text style={styles.disclaimer}>כל החישובים הם הערכה בלבד ואינם תחליף לייעוץ רפואי</Text>
-    </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff', paddingHorizontal: 18, paddingTop: 18 },
+  container: { flex: 1, backgroundColor: '#fff', paddingHorizontal: 18 },
+  content: { paddingTop: 18, paddingBottom: 28 },
+
   title: { fontSize: 22, fontWeight: '900', textAlign: 'center', writingDirection: 'rtl', marginBottom: 6 },
   subtitle: { fontSize: 13, color: '#666', textAlign: 'center', writingDirection: 'rtl', marginBottom: 14, fontWeight: '700' },
 
@@ -148,6 +149,8 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     overflow: 'hidden',
     backgroundColor: '#fff',
+    height: 210,
+    justifyContent: 'center',
   },
 
   pickedText: { marginTop: 10, fontSize: 14, fontWeight: '900', textAlign: 'center', writingDirection: 'rtl', color: '#111' },
