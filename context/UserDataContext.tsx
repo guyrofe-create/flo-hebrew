@@ -39,6 +39,11 @@ export type UserData = {
   setGoal: (goal: string) => Promise<void>;
   setBirthday: (date: string | null) => Promise<void>;
   setPeriodLength: (days: number) => Promise<void>;
+
+  // הוספה: תאימות לאונבורדינג שמצפה ל setCycleLength
+  // בפועל זה מגדיר את cycleLengthManual
+  setCycleLength: (days: number) => Promise<void>;
+
   setCycleLengthManual: (days: number) => Promise<void>;
   setPeriodStart: (date: string) => Promise<void>;
   addPeriodDate: (date: string) => Promise<void>;
@@ -211,6 +216,11 @@ export function UserDataProvider({ children }: { children: ReactNode }) {
     await AsyncStorage.setItem(STORAGE_KEY_CYCLE_LENGTH_MANUAL, String(v));
   };
 
+  // הוספה: alias כדי שקוד ישן/אונבורדינג שמחפש setCycleLength יעבוד
+  const setCycleLength = async (days: number) => {
+    await setCycleLengthManual(days);
+  };
+
   const setPeriodStart = async (date: string) => {
     const normalized = toNoonIso(date);
     setPeriodStartState(normalized);
@@ -226,7 +236,6 @@ export function UserDataProvider({ children }: { children: ReactNode }) {
       return updated;
     });
 
-    // לא חובה יותר ל-isSetupComplete, אבל נשמור גם periodStart אם ריק כדי להקטין בלבול עתידי
     setPeriodStartState(prev => {
       if (prev) return prev;
       AsyncStorage.setItem(STORAGE_KEY_PERIOD_START, normalized);
@@ -309,7 +318,6 @@ export function UserDataProvider({ children }: { children: ReactNode }) {
     return avg ?? cycleLengthManual ?? 28;
   }, [cycleDatesOldestToNewest, cycleLengthManual]);
 
-  // שינוי מרכזי: אונבורדינג נחשב מושלם אם יש מטרה + לפחות מחזור אחד
   const isSetupComplete = useMemo(() => {
     const hasGoal = !!goal;
     const hasAnyPeriod = (Array.isArray(periodHistory) && periodHistory.length > 0) || !!periodStart;
@@ -334,13 +342,20 @@ export function UserDataProvider({ children }: { children: ReactNode }) {
 
         advancedTracking,
         setAdvancedTracking,
+
         disclaimerAccepted,
         acceptDisclaimer,
         resetDisclaimer,
+
         setGoal,
         setBirthday,
         setPeriodLength,
+
+        // הוספה
+        setCycleLength,
+
         setCycleLengthManual,
+
         setPeriodStart,
         addPeriodDate,
         removePeriodDate,

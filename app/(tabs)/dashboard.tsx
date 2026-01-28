@@ -1,89 +1,10 @@
 import React, { useMemo } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import type { DaySymptoms } from '../../context/UserDataContext';
 import { useUserData } from '../../context/UserDataContext';
-import { addDays, isoNoonFromKey, normalizeNoon } from '../../lib/date';
+import { computeCycleForecast } from '../../lib/cycleForecast';
 
 function formatDateIL(d: Date) {
   return d.toLocaleDateString('he-IL');
-}
-
-function isOvulationPositive(v: unknown) {
-  if (v === true) return true;
-
-  if (typeof v === 'number') return v === 1;
-
-  if (typeof v !== 'string') return false;
-
-  const s = v.trim().toLowerCase();
-
-  return (
-    s === 'positive' ||
-    s === 'pos' ||
-    s === 'true' ||
-    s === 'yes' ||
-    s === 'y' ||
-    s === '1' ||
-    s === 'חיובי' ||
-    s === 'כן'
-  );
-}
-
-function parseNoonFromDayKey(key: string): Date | null {
-  try {
-    const d = normalizeNoon(new Date(isoNoonFromKey(key)));
-    if (Number.isNaN(d.getTime())) return null;
-    return d;
-  } catch {
-    return null;
-  }
-}
-
-function getLatestPeriodStart(periodHistory: string[] | undefined, periodStart: string | null | undefined): Date | null {
-  let best: Date | null = null;
-
-  if (Array.isArray(periodHistory) && periodHistory.length) {
-    for (const iso of periodHistory) {
-      const d = normalizeNoon(new Date(iso));
-      if (Number.isNaN(d.getTime())) continue;
-      if (!best || d.getTime() > best.getTime()) best = d;
-    }
-  }
-
-  if (!best && periodStart) {
-    const d = normalizeNoon(new Date(periodStart));
-    if (!Number.isNaN(d.getTime())) best = d;
-  }
-
-  return best;
-}
-
-function findLatestPositiveOvulationInCurrentCycle(
-  symptomsByDay: Record<string, DaySymptoms> | undefined,
-  lastPeriodStart: Date | null,
-  cycleLength: number
-): Date | null {
-  if (!symptomsByDay || !lastPeriodStart || !cycleLength || cycleLength <= 0) return null;
-
-  const start = normalizeNoon(lastPeriodStart);
-  const end = normalizeNoon(addDays(start, cycleLength));
-
-  let best: Date | null = null;
-
-  for (const key of Object.keys(symptomsByDay)) {
-    const sym = symptomsByDay[key];
-    if (!sym) continue;
-    if (!isOvulationPositive(sym.ovulationTest)) continue;
-
-    const d = parseNoonFromDayKey(key);
-    if (!d) continue;
-
-    if (d.getTime() < start.getTime() || d.getTime() >= end.getTime()) continue;
-
-    if (!best || d.getTime() > best.getTime()) best = d;
-  }
-
-  return best;
 }
 
 export default function DashboardScreen() {
@@ -99,59 +20,15 @@ export default function DashboardScreen() {
     symptomsByDay,
   } = useUserData();
 
-  const today = useMemo(() => normalizeNoon(new Date()), []);
-
-  const lastPeriodStart = useMemo(() => {
-    return getLatestPeriodStart(periodHistory, periodStart);
-  }, [periodHistory, periodStart]);
-
-  const computedPeriodEnd = useMemo(() => {
-    if (!lastPeriodStart || !periodLength || periodLength <= 0) return null;
-    return normalizeNoon(addDays(lastPeriodStart, Math.max(0, periodLength - 1)));
-  }, [lastPeriodStart, periodLength]);
-
-  const latestPositiveOvulation = useMemo(() => {
-    return findLatestPositiveOvulationInCurrentCycle(symptomsByDay, lastPeriodStart, cycleLength);
-  }, [symptomsByDay, lastPeriodStart, cycleLength]);
-
-  const ovulationDate = useMemo(() => {
-    if (latestPositiveOvulation) return latestPositiveOvulation;
-
-    if (!lastPeriodStart || !cycleLength || cycleLength <= 0) return null;
-    const ovuIndex = Math.max(0, cycleLength - 14);
-    return normalizeNoon(addDays(lastPeriodStart, ovuIndex));
-  }, [latestPositiveOvulation, lastPeriodStart, cycleLength]);
-
-  const fertileWindow = useMemo(() => {
-    if (!ovulationDate) return null;
-    const start = normalizeNoon(addDays(ovulationDate, -4));
-    const end = normalizeNoon(addDays(ovulationDate, 1));
-    return { start, end };
-  }, [ovulationDate]);
-
-  const nextPeriodStart = useMemo(() => {
-    if (latestPositiveOvulation) return normalizeNoon(addDays(latestPositiveOvulation, 14));
-
-    if (!lastPeriodStart || !cycleLength || cycleLength <= 0) return null;
-    return normalizeNoon(addDays(lastPeriodStart, cycleLength));
-  }, [latestPositiveOvulation, lastPeriodStart, cycleLength]);
-
-  const cycleDayNumber = useMemo(() => {
-    if (!lastPeriodStart) return null;
-    const diffDays = Math.floor((today.getTime() - lastPeriodStart.getTime()) / (24 * 60 * 60 * 1000));
-    return diffDays >= 0 ? diffDays + 1 : null;
-  }, [today, lastPeriodStart]);
-
-  const isInFertileWindow = useMemo(() => {
-    if (!fertileWindow) return false;
-    return today.getTime() >= fertileWindow.start.getTime() && today.getTime() <= fertileWindow.end.getTime();
-  }, [fertileWindow, today]);
-
-  const inPeriodByCalc = useMemo(() => {
-    if (!lastPeriodStart || !periodLength || periodLength <= 0) return false;
-    const end = normalizeNoon(addDays(lastPeriodStart, Math.max(0, periodLength - 1)));
-    return today.getTime() >= lastPeriodStart.getTime() && today.getTime() <= end.getTime();
-  }, [today, lastPeriodStart, periodLength]);
+  const forecast = useMemo(() => {
+    return computeCycleForecast({
+      periodHistory,
+      periodStart,
+      cycleLength,
+      periodLength,
+      symptomsByDay,
+    });
+  }, [periodHistory, periodStart, cycleLength, periodLength, symptomsByDay]);
 
   const handlePrimary = async () => {
     if (isPeriodActive) {
@@ -169,9 +46,10 @@ export default function DashboardScreen() {
   }, [goal]);
 
   const handleDebugPress = () => {
-    const lp = lastPeriodStart ? formatDateIL(lastPeriodStart) : '-';
-    const ov = latestPositiveOvulation ? formatDateIL(latestPositiveOvulation) : '-';
-    Alert.alert('דיבוג (זמני)', `תחילת מחזור אחרון: ${lp}\nבדיקת ביוץ חיובית במחזור הנוכחי: ${ov}`);
+    const lp = forecast.lastPeriodStart ? formatDateIL(forecast.lastPeriodStart) : '-';
+    const ov = forecast.latestPositiveOvulation ? formatDateIL(forecast.latestPositiveOvulation.date) : '-';
+    const next = forecast.nextPeriodStart ? formatDateIL(forecast.nextPeriodStart) : '-';
+    Alert.alert('דיבוג (זמני)', `תחילת מחזור אחרון: ${lp}\nבדיקת ביוץ חיובית במחזור הנוכחי: ${ov}\nמחזור צפוי הבא: ${next}`);
   };
 
   return (
@@ -179,11 +57,11 @@ export default function DashboardScreen() {
       <Text style={styles.screenTitle}>מעקב</Text>
 
       <View style={styles.cardTop}>
-        <Text style={styles.bigTitle}>{cycleDayNumber ? `יום ${cycleDayNumber} במחזור` : 'מעקב מחזור'}</Text>
+        <Text style={styles.bigTitle}>{forecast.cycleDayNumber ? `יום ${forecast.cycleDayNumber} במחזור` : 'מעקב מחזור'}</Text>
 
-        {lastPeriodStart && <Text style={styles.smallLine}>תחילת מחזור אחרון: {formatDateIL(lastPeriodStart)}</Text>}
-        {computedPeriodEnd && <Text style={styles.smallLine}>סיום מחזור משוער: {formatDateIL(computedPeriodEnd)}</Text>}
-        {nextPeriodStart && <Text style={styles.smallLine}>מחזור צפוי הבא: {formatDateIL(nextPeriodStart)}</Text>}
+        {forecast.lastPeriodStart && <Text style={styles.smallLine}>תחילת מחזור אחרון: {formatDateIL(forecast.lastPeriodStart)}</Text>}
+        {forecast.computedPeriodEnd && <Text style={styles.smallLine}>סיום מחזור משוער: {formatDateIL(forecast.computedPeriodEnd)}</Text>}
+        {forecast.nextPeriodStart && <Text style={styles.smallLine}>מחזור צפוי הבא: {formatDateIL(forecast.nextPeriodStart)}</Text>}
 
         <Text style={styles.goalLine}>{goalLabel}</Text>
 
@@ -203,23 +81,23 @@ export default function DashboardScreen() {
 
         <View style={styles.rowBox}>
           <Text style={styles.rowLabel}>מחזור הבא</Text>
-          <Text style={styles.rowValue}>{nextPeriodStart ? formatDateIL(nextPeriodStart) : '-'}</Text>
+          <Text style={styles.rowValue}>{forecast.nextPeriodStart ? formatDateIL(forecast.nextPeriodStart) : '-'}</Text>
         </View>
 
         <View style={styles.rowBox}>
           <Text style={styles.rowLabel}>חלון פוריות</Text>
           <Text style={styles.rowValue}>
-            {fertileWindow ? `${formatDateIL(fertileWindow.start)} - ${formatDateIL(fertileWindow.end)}` : '-'}
+            {forecast.fertileWindow ? `${formatDateIL(forecast.fertileWindow.start)} - ${formatDateIL(forecast.fertileWindow.end)}` : '-'}
           </Text>
         </View>
 
         <View style={styles.rowBox}>
           <Text style={styles.rowLabel}>ביוץ</Text>
-          <Text style={styles.rowValue}>{ovulationDate ? formatDateIL(ovulationDate) : '-'}</Text>
+          <Text style={styles.rowValue}>{forecast.ovulationDate ? formatDateIL(forecast.ovulationDate) : '-'}</Text>
         </View>
 
         <Text style={styles.cardNote}>
-          אם הוזנה בדיקת ביוץ חיובית במחזור הנוכחי, הביוץ והחלון מחושבים סביב היום שסומן כחיובי. אחרת החישוב לפי אורך המחזור.
+          אם הוזנה בדיקת ביוץ חיובית במחזור הנוכחי, הביוץ וחלון הפוריות מחושבים סביב היום שסומן כחיובי. אחרת החישוב לפי אורך המחזור.
         </Text>
       </View>
 
@@ -227,12 +105,12 @@ export default function DashboardScreen() {
         <Text style={styles.cardTitle}>היום</Text>
 
         <View style={styles.badgesRow}>
-          <View style={[styles.badge, inPeriodByCalc && styles.badgeOn]}>
-            <Text style={[styles.badgeText, inPeriodByCalc && styles.badgeTextOn]}>מחזור</Text>
+          <View style={[styles.badge, forecast.inPeriodByCalc && styles.badgeOn]}>
+            <Text style={[styles.badgeText, forecast.inPeriodByCalc && styles.badgeTextOn]}>מחזור</Text>
           </View>
 
-          <View style={[styles.badge, isInFertileWindow && styles.badgeOnGreen]}>
-            <Text style={[styles.badgeText, isInFertileWindow && styles.badgeTextOn]}>חלון פוריות</Text>
+          <View style={[styles.badge, forecast.isInFertileWindow && styles.badgeOnGreen]}>
+            <Text style={[styles.badgeText, forecast.isInFertileWindow && styles.badgeTextOn]}>חלון פוריות</Text>
           </View>
         </View>
 

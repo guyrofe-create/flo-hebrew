@@ -18,7 +18,7 @@ export default function PurposeScreen() {
 
   const onPick = async (goalKey: GoalKey) => {
     await setGoal(goalKey);
-    (router as any).push('/onboarding/cycle-length');
+    router.push('/onboarding/cycle-length' as any);
   };
 
   return (
@@ -27,8 +27,8 @@ export default function PurposeScreen() {
       <Text style={styles.subtitle}>אפשר לשנות אחר כך בהגדרות</Text>
 
       <View style={styles.list}>
-        {OPTIONS.map(o => (
-          <Pressable key={o.key} style={styles.card} onPress={() => onPick(o.key)}>
+        {OPTIONS.map((o) => (
+          <Pressable key={o.key} style={styles.card} onPress={() => void onPick(o.key)}>
             <Text style={styles.cardText}>{o.label}</Text>
           </Pressable>
         ))}

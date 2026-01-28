@@ -3,6 +3,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import DayModal from '../../components/DayModal';
 import type { DaySymptoms } from '../../context/UserDataContext';
 import { useUserData } from '../../context/UserDataContext';
+import { findLatestPositiveOvulationInCurrentCycle, getLatestPeriodStart } from '../../lib/cycleForecast';
 import { addDays, daysBetween, formatKey, isoNoonFromKey, normalizeNoon } from '../../lib/date';
 
 type MarkType = 'period' | 'fertile' | 'ovulation' | null;
@@ -20,44 +21,6 @@ function hasAnySymptoms(sym: DaySymptoms | undefined) {
       (sym.notes && String(sym.notes).trim().length > 0) ||
       sym.photoUri
   );
-}
-
-function isOvulationPositive(v: unknown) {
-  if (v === true) return true;
-  if (typeof v !== 'string') return false;
-  const s = v.trim().toLowerCase();
-  return s === 'positive' || s === 'pos' || s === 'true';
-}
-
-function findLatestPositiveOvulationKeyInCurrentCycle(
-  symptomsByDay: Record<string, DaySymptoms>,
-  lastPeriodStart: Date | null,
-  cycleLength: number
-): string | null {
-  if (!lastPeriodStart || !cycleLength || cycleLength <= 0) return null;
-
-  const start = normalizeNoon(lastPeriodStart);
-  const end = normalizeNoon(addDays(start, cycleLength));
-
-  let bestKey: string | null = null;
-  let bestTime = -Infinity;
-
-  for (const key of Object.keys(symptomsByDay)) {
-    const sym = symptomsByDay[key];
-    if (!sym) continue;
-    if (!isOvulationPositive(sym.ovulationTest)) continue;
-
-    const d = normalizeNoon(new Date(isoNoonFromKey(key)));
-    if (Number.isNaN(d.getTime())) continue;
-    if (d.getTime() < start.getTime() || d.getTime() >= end.getTime()) continue;
-
-    if (d.getTime() > bestTime) {
-      bestTime = d.getTime();
-      bestKey = key;
-    }
-  }
-
-  return bestKey;
 }
 
 export default function CalendarScreen() {
@@ -95,9 +58,7 @@ export default function CalendarScreen() {
   }, [month]);
 
   const lastPeriodStart = useMemo(() => {
-    if (periodHistory.length > 0) return normalizeNoon(new Date(periodHistory[0]));
-    if (periodStart) return normalizeNoon(new Date(periodStart));
-    return null;
+    return getLatestPeriodStart(periodHistory, periodStart);
   }, [periodHistory, periodStart]);
 
   const lastPeriodStartIso = useMemo(() => {
@@ -120,13 +81,17 @@ export default function CalendarScreen() {
     return cells;
   }, [month]);
 
+  const latestPositiveOvulation = useMemo(() => {
+    return findLatestPositiveOvulationInCurrentCycle(symptomsByDay, lastPeriodStart, cycleLength);
+  }, [symptomsByDay, lastPeriodStart, cycleLength]);
+
   const marks = useMemo(() => {
     const m = new Map<string, MarkType>();
     if (!lastPeriodStart || !cycleLength || cycleLength <= 0) return m;
 
     const ovuIndexBase = Math.max(0, cycleLength - 14);
 
-    // בסיס לפי חישוב
+    // בסיס מחזורי לפי אורך מחזור
     for (const d of daysGrid) {
       const delta = daysBetween(d, lastPeriodStart);
       const mod = ((delta % cycleLength) + cycleLength) % cycleLength;
@@ -151,17 +116,16 @@ export default function CalendarScreen() {
       m.set(key, null);
     }
 
-    // דיוק לפי ביוץ חיובי: תמיד מתחשב אם קיים, גם כשהמתג כבוי
-    const positiveKey = findLatestPositiveOvulationKeyInCurrentCycle(symptomsByDay, lastPeriodStart, cycleLength);
-
-    if (positiveKey) {
+    // תיקון לפי ביוץ חיובי במחזור הנוכחי (מקור אמת)
+    if (latestPositiveOvulation) {
+      // ננקה רק סימונים "פוריות" ו"ביוץ" מהבסיס, לא נוגעים במחזור
       for (const d of daysGrid) {
         const k = formatKey(d);
         const curr = m.get(k);
         if (curr === 'fertile' || curr === 'ovulation') m.set(k, null);
       }
 
-      const ovuDate = normalizeNoon(new Date(isoNoonFromKey(positiveKey)));
+      const ovuDate = latestPositiveOvulation.date;
 
       for (const d of daysGrid) {
         const k = formatKey(d);
@@ -173,7 +137,7 @@ export default function CalendarScreen() {
     }
 
     return m;
-  }, [lastPeriodStart, cycleLength, periodLength, daysGrid, symptomsByDay]);
+  }, [lastPeriodStart, cycleLength, periodLength, daysGrid, latestPositiveOvulation]);
 
   const goPrevMonth = () => {
     const d = new Date(month);
@@ -229,8 +193,8 @@ export default function CalendarScreen() {
   }, [symptomsByDay, selectedKey]);
 
   const hasPositiveInCycle = useMemo(() => {
-    return !!findLatestPositiveOvulationKeyInCurrentCycle(symptomsByDay, lastPeriodStart, cycleLength);
-  }, [symptomsByDay, lastPeriodStart, cycleLength]);
+    return !!latestPositiveOvulation;
+  }, [latestPositiveOvulation]);
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
