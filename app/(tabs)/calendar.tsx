@@ -9,6 +9,22 @@ import { addDays, daysBetween, formatKey, isoNoonFromKey, normalizeNoon } from '
 
 type MarkType = 'period' | 'fertile' | 'ovulation' | null;
 
+type NormalizedPhysioMode = 'regular' | 'postpartum' | 'breastfeeding' | 'perimenopause' | 'postOCP';
+
+function normalizePhysioMode(mode: any): NormalizedPhysioMode {
+  if (mode === 'regular') return 'regular';
+  if (mode === 'none') return 'regular';
+
+  if (mode === 'postOCP') return 'postOCP';
+  if (mode === 'stoppingPills') return 'postOCP';
+
+  if (mode === 'postpartum') return 'postpartum';
+  if (mode === 'breastfeeding') return 'breastfeeding';
+  if (mode === 'perimenopause') return 'perimenopause';
+
+  return 'regular';
+}
+
 function hasAnySymptoms(sym: DaySymptoms | undefined) {
   if (!sym) return false;
   return Boolean(
@@ -24,9 +40,18 @@ function hasAnySymptoms(sym: DaySymptoms | undefined) {
   );
 }
 
+function modeNote(mode: NormalizedPhysioMode) {
+  if (mode === 'postpartum') return 'מצב אחרי לידה: החישוב של חלון פוריות וביוץ לפי דפוס מחזורי עשוי להיות לא מדויק.';
+  if (mode === 'breastfeeding') return 'מצב הנקה: ביוץ יכול להיות לא צפוי. מומלץ להתבסס יותר על נתונים שנמדדים בפועל.';
+  if (mode === 'perimenopause') return 'מצב לקראת גיל המעבר: שכיחים שינויים ולכן החישוב עשוי להיות פחות מדויק.';
+  if (mode === 'postOCP') return 'מצב הפסקת גלולות: ייתכנו שינויים זמניים במחזורים הראשונים.';
+  return null;
+}
+
 export default function CalendarScreen() {
   const {
     goal,
+    physioMode,
     periodHistory,
     periodStart,
     cycleLength,
@@ -42,6 +67,9 @@ export default function CalendarScreen() {
     advancedTracking,
     setSelectedDayKey,
   } = useUserData();
+
+  const physioModeNorm = useMemo(() => normalizePhysioMode(physioMode), [physioMode]);
+  const isSpecialMode = physioModeNorm !== 'regular';
 
   const today = useMemo(() => normalizeNoon(new Date()), []);
 
@@ -62,13 +90,11 @@ export default function CalendarScreen() {
     return getLatestPeriodStart(periodHistory, periodStart);
   }, [periodHistory, periodStart]);
 
-  // FIX: לא להשתמש ב toISOString (UTC) כדי למנוע סטייה של יום. לייצר ISO בצהריים דרך dayKey.
   const lastPeriodStartIso = useMemo(() => {
     if (!lastPeriodStart) return null;
     return isoNoonFromKey(formatKey(lastPeriodStart));
   }, [lastPeriodStart]);
 
-  // FIX: לכלול גם periodStart כדי שסימון "תחילת מחזור שהוזנה" יעבוד גם אם אין היסטוריה
   const periodSet = useMemo(() => {
     const items = [
       ...(Array.isArray(periodHistory) ? periodHistory : []),
@@ -111,9 +137,11 @@ export default function CalendarScreen() {
         continue;
       }
 
-      const shouldShowFertility = goal !== 'prevent';
+      // במצב מיוחד - לא מציירים "פוריות/ביוץ" לפי חישוב דפוסי.
+      // כן מציירים אם יש בדיקת ביוץ חיובית במחזור הנוכחי (כי זה נתון בפועל).
+      const shouldShowFertilityByCalc = goal !== 'prevent' && !isSpecialMode;
 
-      if (shouldShowFertility) {
+      if (shouldShowFertilityByCalc) {
         if (mod === ovuIndexBase) {
           m.set(key, 'ovulation');
           continue;
@@ -147,7 +175,7 @@ export default function CalendarScreen() {
     }
 
     return m;
-  }, [lastPeriodStart, cycleLength, periodLength, daysGrid, latestPositiveOvulation, goal]);
+  }, [lastPeriodStart, cycleLength, periodLength, daysGrid, latestPositiveOvulation, goal, isSpecialMode]);
 
   const goPrevMonth = () => {
     const d = new Date(month);
@@ -209,6 +237,8 @@ export default function CalendarScreen() {
   const tryingToConceive = goal === 'conceive';
   const showFertilityUI = goal !== 'prevent';
 
+  const bannerText = useMemo(() => modeNote(physioModeNorm), [physioModeNorm]);
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
       <View style={styles.header}>
@@ -222,6 +252,18 @@ export default function CalendarScreen() {
           <Text style={styles.navBtnText}>{'>'}</Text>
         </Pressable>
       </View>
+
+      {bannerText && (
+        <View style={styles.modeBanner}>
+          <Text style={styles.modeBannerTitle}>מצב מיוחד פעיל</Text>
+          <Text style={styles.modeBannerText}>{bannerText}</Text>
+          {showFertilityUI && isSpecialMode && !hasPositiveInCycle && (
+            <Text style={styles.modeBannerHint}>
+              כדי להציג חלון פוריות וביוץ בלוח במצב זה, מומלץ לסמן בדיקת ביוץ חיובית כשזה רלוונטי.
+            </Text>
+          )}
+        </View>
+      )}
 
       {tryingToConceive && (
         <View style={styles.ttcBanner}>
@@ -330,6 +372,12 @@ export default function CalendarScreen() {
           </Text>
         )}
 
+        {showFertilityUI && isSpecialMode && !hasPositiveInCycle && (
+          <Text style={styles.legendHint}>
+            במצב מיוחד הלוח לא מציג חלון פוריות וביוץ לפי חישוב דפוסי. כדי לדייק, סמני בדיקת ביוץ כחיובית כשזה רלוונטי.
+          </Text>
+        )}
+
         {!advancedTracking && (
           <Text style={styles.legendHint}>
             מעקב מתקדם כבוי: זה משפיע רק על תצוגת שדות נוספים. החישובים עדיין מתחשבים בנתונים מתקדמים שכבר הוזנו.
@@ -399,6 +447,43 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '900',
     color: '#6a1b9a',
+  },
+
+  modeBanner: {
+    borderWidth: 1,
+    borderColor: '#e9ddff',
+    borderRadius: 16,
+    padding: 12,
+    backgroundColor: '#f6f2ff',
+    marginBottom: 10,
+  },
+
+  modeBannerTitle: {
+    fontSize: 13,
+    fontWeight: '900',
+    color: '#6a1b9a',
+    writingDirection: 'rtl',
+    textAlign: 'right',
+    marginBottom: 4,
+  },
+
+  modeBannerText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#555',
+    writingDirection: 'rtl',
+    textAlign: 'right',
+    lineHeight: 18,
+  },
+
+  modeBannerHint: {
+    marginTop: 6,
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#444',
+    writingDirection: 'rtl',
+    textAlign: 'right',
+    lineHeight: 16,
   },
 
   ttcBanner: {
@@ -527,6 +612,7 @@ const styles = StyleSheet.create({
     writingDirection: 'rtl',
     textAlign: 'right',
     fontWeight: '700',
+    lineHeight: 16,
   },
 
   note: {

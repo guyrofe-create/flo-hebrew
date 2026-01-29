@@ -7,12 +7,57 @@ import { useUserData } from '../../context/UserDataContext';
 import { computeClinicalInsights, type ClinicalFlag } from '../../lib/clinicalInsights';
 import { computeCycleInsights } from '../../lib/cycleInsights';
 
+type NormalizedPhysioMode = 'regular' | 'postpartum' | 'breastfeeding' | 'perimenopause' | 'postOCP';
+
+function normalizePhysioMode(mode: any): NormalizedPhysioMode {
+  if (mode === 'regular') return 'regular';
+  if (mode === 'none') return 'regular';
+
+  if (mode === 'postOCP') return 'postOCP';
+  if (mode === 'stoppingPills') return 'postOCP';
+
+  if (mode === 'postpartum') return 'postpartum';
+  if (mode === 'breastfeeding') return 'breastfeeding';
+  if (mode === 'perimenopause') return 'perimenopause';
+
+  return 'regular';
+}
+
 function round1(n: number) {
   return Math.round(n * 10) / 10;
 }
 
 function clamp(n: number, a: number, b: number) {
   return Math.max(a, Math.min(b, n));
+}
+
+function computeAgeYears(birthdayIso: string | null): number | undefined {
+  if (!birthdayIso) return undefined;
+  const d = new Date(birthdayIso);
+  if (Number.isNaN(d.getTime())) return undefined;
+
+  const today = new Date();
+  let age = today.getFullYear() - d.getFullYear();
+  const m = today.getMonth() - d.getMonth();
+  if (m < 0 || (m === 0 && today.getDate() < d.getDate())) age -= 1;
+  if (!Number.isFinite(age) || age < 0 || age > 120) return undefined;
+  return age;
+}
+
+function confidenceLabel(c: string) {
+  switch (c) {
+    case 'high':
+      return 'גבוהה';
+    case 'medium':
+      return 'בינונית';
+    case 'low':
+      return 'נמוכה';
+    case 'very_low':
+      return 'נמוכה מאוד';
+    case 'none':
+    default:
+      return 'אין';
+  }
 }
 
 function Chart({ values, avg }: { values: number[]; avg: number | null }) {
@@ -25,7 +70,6 @@ function Chart({ values, avg }: { values: number[]; avg: number | null }) {
 
   const n = values.length;
 
-  // הגנה על מצב שאין ערכים
   const minY = values.length ? Math.min(20, ...values) - 2 : 18;
   const maxY = values.length ? Math.max(40, ...values) + 2 : 42;
 
@@ -96,9 +140,11 @@ function Chart({ values, avg }: { values: number[]; avg: number | null }) {
 }
 
 export default function InsightsScreen() {
-  const { periodHistory, periodStart, periodLength } = useUserData();
+  const { periodHistory, periodStart, periodLength, birthday, physioMode } = useUserData();
 
-  // כולל גם periodStart כדי שלא נקבל "0 מחזורים" כשיש תאריך יחיד
+  const ageYears = useMemo(() => computeAgeYears(birthday), [birthday]);
+  const physioModeNorm = useMemo(() => normalizePhysioMode(physioMode), [physioMode]);
+
   const cycleDatesOldestToNewest = useMemo(() => {
     const items = [
       ...(Array.isArray(periodHistory) ? periodHistory : []),
@@ -109,7 +155,11 @@ export default function InsightsScreen() {
     return uniq.sort();
   }, [periodHistory, periodStart]);
 
-  const insights = useMemo(() => computeCycleInsights(cycleDatesOldestToNewest), [cycleDatesOldestToNewest]);
+  const insights = useMemo(
+    () => computeCycleInsights(cycleDatesOldestToNewest, ageYears, physioModeNorm),
+    [cycleDatesOldestToNewest, ageYears, physioModeNorm]
+  );
+
   const values = insights.points.map(p => p.lengthDays);
 
   const clinicalFlags: ClinicalFlag[] = useMemo(() => {
@@ -124,24 +174,35 @@ export default function InsightsScreen() {
   const hasClinical = clinicalFlags.length > 0;
 
   const dataLevelText = useMemo(() => {
-    if (insights.n < 3) return 'אין עדיין מספיק מחזורים להערכת דפוס מחזורי';
-    if (insights.n < 6) return 'יש נתונים להערכה ראשונית של דפוס המחזור';
+    if (insights.predictionConfidence === 'none') return 'אין עדיין מספיק נתונים לתובנות';
+    if (insights.predictionConfidence === 'very_low') return 'הדיוק צפוי להיות נמוך מאוד כרגע';
+    if (insights.predictionConfidence === 'low') return 'הדיוק צפוי להיות נמוך כרגע';
+    if (insights.predictionConfidence === 'medium') return 'יש נתונים להערכה ראשונית של דפוס המחזור';
     return 'יש מספיק נתונים להערכה אמינה של דפוס המחזור';
-  }, [insights.n]);
+  }, [insights.predictionConfidence]);
 
   const regularityText = useMemo(() => {
+    if (insights.suppressIrregularFlag) return null;
     if (insights.n < 3) return null;
     return insights.isIrregular ? 'המחזורים עשויים להיות לא סדירים' : 'המחזורים נראים סדירים';
-  }, [insights.n, insights.isIrregular]);
+  }, [insights.n, insights.isIrregular, insights.suppressIrregularFlag]);
+
+  const confidenceText = useMemo(() => {
+    return `רמת ביטחון בתחזיות: ${confidenceLabel(insights.predictionConfidence)}`;
+  }, [insights.predictionConfidence]);
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
       <Text style={styles.title}>תובנות מחזור</Text>
-      <Text style={styles.subtitle}>אפשר לשנות מטרה בהגדרות בכל שלב</Text>
+      <Text style={styles.subtitle}>אפשר לשנות בהגדרות בכל שלב</Text>
 
       <View style={styles.card}>
         <Text style={styles.cardTitle}>רמת נתונים</Text>
         <Text style={styles.statusText}>{dataLevelText}</Text>
+
+        <Text style={styles.statusText}>{confidenceText}</Text>
+
+        {insights.modeNote && <Text style={styles.modeNote}>{insights.modeNote}</Text>}
 
         {regularityText && (
           <Text style={[styles.statusText, insights.isIrregular ? styles.bad : styles.good]}>{regularityText}</Text>
@@ -188,7 +249,7 @@ export default function InsightsScreen() {
         <Chart values={values} avg={insights.avg} />
       </View>
 
-      <Text style={styles.disclaimer}>ההערכות מבוססות על דפוס מחזורי לאורך זמן ואינן תחליף לייעוץ רפואי</Text>
+      <Text style={styles.disclaimer}>ההערכות הן מידע כללי ואינן תחליף לייעוץ רפואי</Text>
     </ScrollView>
   );
 }
@@ -204,6 +265,16 @@ const styles = StyleSheet.create({
   cardTitle: { fontWeight: '900', fontSize: 16, marginBottom: 10, writingDirection: 'rtl', textAlign: 'right', color: '#111' },
 
   statusText: { fontSize: 14, fontWeight: '800', writingDirection: 'rtl', textAlign: 'right', marginBottom: 6 },
+
+  modeNote: {
+    marginTop: 2,
+    fontSize: 12,
+    color: '#555',
+    writingDirection: 'rtl',
+    textAlign: 'right',
+    fontWeight: '700',
+    lineHeight: 18,
+  },
 
   kpiRow: { flexDirection: 'row-reverse', gap: 10, marginBottom: 10 },
   kpiBox: {

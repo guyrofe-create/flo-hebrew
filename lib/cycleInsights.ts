@@ -2,16 +2,20 @@
 import { normalizeNoon } from './date';
 
 export type CycleLengthPoint = {
-  index: number;        // 1..N
-  startIso: string;     // מחזור "נוכחי" שממנו מחשבים עד הבא
+  index: number; // 1..N
+  startIso: string; // מחזור "נוכחי" שממנו מחשבים עד הבא
   nextStartIso: string; // תחילת המחזור הבא
-  lengthDays: number;   // אורך המחזור בימים
+  lengthDays: number; // אורך המחזור בימים
 };
+
+export type PhysioMode = 'regular' | 'postpartum' | 'breastfeeding' | 'perimenopause' | 'postOCP';
+
+export type PredictionConfidence = 'none' | 'very_low' | 'low' | 'medium' | 'high';
 
 export type CycleInsights = {
   points: CycleLengthPoint[];
 
-  n: number;            // מספר אורכי מחזור שיש לנו (N)
+  n: number; // מספר אורכי מחזור שיש לנו (N)
   avg: number | null;
   stdDev: number | null;
   // Alias אופציונלי לשמירה על תאימות אם קוד אחר מצפה לשם אחר
@@ -20,12 +24,21 @@ export type CycleInsights = {
   min: number | null;
   max: number | null;
 
-  hasOutOfRange: boolean;     // מחזור <24 או >38 (לגיל 18-45)
-  isIrregular: boolean;       // variation > threshold (כשיש מספיק נתונים) או out-of-range
-  irregularReason: string[];  // להסבר למשתמשת
+  hasOutOfRange: boolean; // מחזור <24 או >38 (לגיל 18-45)
+  isIrregular: boolean; // variation > threshold (כשיש מספיק נתונים) או out-of-range
+  irregularReason: string[]; // להסבר למשתמשת
 
   irregularThresholdDays: number | null; // 7 או 9 (אם גיל ידוע), אחרת null
-  variationDays: number | null;          // max-min
+  variationDays: number | null; // max-min
+
+  physioMode: PhysioMode;
+  predictionConfidence: PredictionConfidence;
+
+  // הודעה קצרה שמסבירה למה הדיוק נמוך (לשימוש בדשבורד/אינסייטס)
+  modeNote: string | null;
+
+  // אם מצב מיוחד, נעדיף לא לקבוע "סדירות" לפי FIGO גם אם יש נתונים
+  suppressIrregularFlag: boolean;
 };
 
 function daysBetween(a: Date, b: Date) {
@@ -48,7 +61,51 @@ function figoIrregularityThreshold(ageYears?: number): number | null {
   return null;
 }
 
-export function computeCycleInsights(periodHistoryIso: string[] | undefined, ageYears?: number): CycleInsights {
+function modeMeta(mode: PhysioMode): {
+  predictionConfidence: PredictionConfidence;
+  modeNote: string | null;
+  suppressIrregularFlag: boolean;
+} {
+  switch (mode) {
+    case 'postpartum':
+      return {
+        predictionConfidence: 'very_low',
+        modeNote: 'אחרי לידה המחזורים והביוץ יכולים להיות לא צפויים, ולכן התחזיות פחות מדויקות בתקופה זו.',
+        suppressIrregularFlag: true,
+      };
+    case 'breastfeeding':
+      return {
+        predictionConfidence: 'very_low',
+        modeNote: 'בהנקה ביוץ יכול להיות לא סדיר או להופיע בלי דפוס קבוע, ולכן התחזיות פחות מדויקות.',
+        suppressIrregularFlag: true,
+      };
+    case 'postOCP':
+      return {
+        predictionConfidence: 'low',
+        modeNote: 'לאחר הפסקת גלולות הגוף עשוי להסתגל בהדרגה. המחזורים הראשונים יכולים להיות לא יציבים ולכן התחזיות פחות מדויקות.',
+        suppressIrregularFlag: true,
+      };
+    case 'perimenopause':
+      return {
+        predictionConfidence: 'low',
+        modeNote: 'לקראת גיל המעבר שכיחים שינויים באורך המחזור ובביוץ, ולכן התחזיות פחות מדויקות בתקופה זו.',
+        suppressIrregularFlag: true,
+      };
+    case 'regular':
+    default:
+      return {
+        predictionConfidence: 'medium',
+        modeNote: null,
+        suppressIrregularFlag: false,
+      };
+  }
+}
+
+export function computeCycleInsights(
+  periodHistoryIso: string[] | undefined,
+  ageYears?: number,
+  physioMode: PhysioMode = 'regular'
+): CycleInsights {
   const src = Array.isArray(periodHistoryIso) ? periodHistoryIso.filter(Boolean) : [];
   const dates: string[] = [];
 
@@ -93,7 +150,7 @@ export function computeCycleInsights(periodHistoryIso: string[] | undefined, age
   const min = n ? Math.min(...lengths) : null;
   const max = n ? Math.max(...lengths) : null;
 
-  const variationDays = min !== null && max !== null ? (max - min) : null;
+  const variationDays = min !== null && max !== null ? max - min : null;
 
   const threshold = figoIrregularityThreshold(ageYears);
 
@@ -103,7 +160,12 @@ export function computeCycleInsights(periodHistoryIso: string[] | undefined, age
   const enoughForVariation = n >= 2 && variationDays !== null;
   const variationIrregular = threshold !== null && enoughForVariation && variationDays > threshold;
 
-  const isIrregular = threshold !== null ? (hasOutOfRange || variationIrregular) : hasOutOfRange;
+  const meta = modeMeta(physioMode);
+
+  // במצבים מיוחדים - לא "מקבעים" תווית אי סדירות לפי FIGO, כי זה עלול להיות נכון ביולוגית אך לא מועיל,
+  // וגם עלול ליצור חיווי אדום קבוע בתקופות שבהן זה צפוי.
+  const isIrregularRaw = threshold !== null ? hasOutOfRange || variationIrregular : hasOutOfRange;
+  const isIrregular = meta.suppressIrregularFlag ? false : isIrregularRaw;
 
   const irregularReason: string[] = [];
 
@@ -112,7 +174,9 @@ export function computeCycleInsights(periodHistoryIso: string[] | undefined, age
   }
 
   if (!inFigoAgeRange) {
-    irregularReason.push('הגדרת סדירות לפי FIGO מבוססת בעיקר על גילאי 18 עד 45. מחוץ לטווח זה מוצגים נתונים ללא קביעה חד משמעית.');
+    irregularReason.push(
+      'הגדרת סדירות לפי FIGO מבוססת בעיקר על גילאי 18 עד 45. מחוץ לטווח זה מוצגים נתונים ללא קביעה חד משמעית.'
+    );
   }
 
   if (hasOutOfRange) {
@@ -120,7 +184,27 @@ export function computeCycleInsights(periodHistoryIso: string[] | undefined, age
   }
 
   if (threshold !== null && enoughForVariation && variationDays !== null && variationDays > threshold) {
-    irregularReason.push(`השונות בין אורכי המחזורים גבוהה: הפער בין הקצר לארוך הוא ${variationDays} ימים (סף FIGO: יותר מ-${threshold}).`);
+    irregularReason.push(
+      `השונות בין אורכי המחזורים גבוהה: הפער בין הקצר לארוך הוא ${variationDays} ימים (סף FIGO: יותר מ-${threshold}).`
+    );
+  }
+
+  // במצב מיוחד - נחליף את שפת "אי סדירות" בהסבר קצר יותר שמתאים להקשר
+  if (meta.suppressIrregularFlag) {
+    irregularReason.length = 0;
+    if (meta.modeNote) irregularReason.push(meta.modeNote);
+  }
+
+  // קביעת confidence בפועל - משודרג לפי כמות נתונים במצב רגיל בלבד
+  let predictionConfidence: PredictionConfidence = meta.predictionConfidence;
+  if (physioMode === 'regular') {
+    if (n >= 6) predictionConfidence = 'high';
+    else if (n >= 3) predictionConfidence = 'medium';
+    else if (n >= 1) predictionConfidence = 'low';
+    else predictionConfidence = 'none';
+  } else {
+    // במצבים מיוחדים - אם אין נתונים בכלל, אין תחזית
+    if (n === 0) predictionConfidence = 'none';
   }
 
   return {
@@ -128,7 +212,7 @@ export function computeCycleInsights(periodHistoryIso: string[] | undefined, age
     n,
     avg,
     stdDev,
-    std: stdDev, // alias אופציונלי
+    std: stdDev,
     min,
     max,
     hasOutOfRange,
@@ -136,5 +220,10 @@ export function computeCycleInsights(periodHistoryIso: string[] | undefined, age
     irregularReason,
     irregularThresholdDays: threshold,
     variationDays,
+
+    physioMode,
+    predictionConfidence,
+    modeNote: meta.modeNote,
+    suppressIrregularFlag: meta.suppressIrregularFlag,
   };
 }

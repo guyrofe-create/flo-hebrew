@@ -16,6 +16,13 @@ export type DaySymptoms = {
   photoUri?: string;
 };
 
+// מצב פיזיולוגי יחיד (רק אחד יכול להיות פעיל)
+export type PhysioMode = 'none' | 'postpartum' | 'breastfeeding' | 'perimenopause' | 'stoppingPills';
+
+// תמיכה לאחור: ייתכן שיש לך עדיין specialStates בסטורייג'
+type SpecialStateKey = 'postpartum' | 'breastfeeding' | 'perimenopause' | 'stoppingPills';
+type LegacySpecialStates = Record<SpecialStateKey, boolean>;
+
 export type UserData = {
   goal: string | null;
   birthday: string | null;
@@ -36,6 +43,9 @@ export type UserData = {
   disclaimerAccepted: boolean;
   acceptDisclaimer: () => Promise<void>;
   resetDisclaimer: () => Promise<void>;
+
+  physioMode: PhysioMode;
+  setPhysioMode: (mode: PhysioMode) => Promise<void>;
 
   setGoal: (goal: string) => Promise<void>;
   setBirthday: (date: string | null) => Promise<void>;
@@ -72,6 +82,12 @@ const STORAGE_KEY_SYMPTOMS_BY_DAY = 'symptomsByDay';
 const STORAGE_KEY_DISCLAIMER_ACCEPTED = 'disclaimerAccepted';
 const STORAGE_KEY_ADVANCED_TRACKING = 'advancedTracking';
 
+// חדש: מצב יחיד
+const STORAGE_KEY_PHYSIO_MODE = 'physioMode';
+
+// ישן: מצב מרובה (למיגרציה בלבד)
+const STORAGE_KEY_SPECIAL_STATES = 'specialStates';
+
 function clampInt(n: number, min: number, max: number) {
   const x = Number(n);
   if (Number.isNaN(x)) return min;
@@ -105,6 +121,38 @@ function shouldForceAdvancedTracking(goal: string | null) {
   return goal === 'conceive' || goal === 'prevent';
 }
 
+function isPhysioMode(x: any): x is PhysioMode {
+  return x === 'none' || x === 'postpartum' || x === 'breastfeeding' || x === 'perimenopause' || x === 'stoppingPills';
+}
+
+function parsePhysioMode(raw: string | null): PhysioMode {
+  if (!raw) return 'none';
+  try {
+    const v = JSON.parse(raw);
+    if (isPhysioMode(v)) return v;
+  } catch {
+    // ignore
+  }
+  // ייתכן ששמרת string רגיל בלי JSON
+  if (isPhysioMode(raw)) return raw;
+  return 'none';
+}
+
+// מיגרציה: specialStates -> physioMode (לוקחים את הראשון שהוגדר true)
+function legacySpecialStatesToPhysioMode(raw: string | null): PhysioMode {
+  if (!raw) return 'none';
+  try {
+    const parsed = JSON.parse(raw) as Partial<LegacySpecialStates>;
+    const order: SpecialStateKey[] = ['postpartum', 'breastfeeding', 'perimenopause', 'stoppingPills'];
+    for (const k of order) {
+      if (parsed && parsed[k] === true) return k;
+    }
+  } catch {
+    // ignore
+  }
+  return 'none';
+}
+
 export function UserDataProvider({ children }: { children: ReactNode }) {
   const [goal, setGoalState] = useState<string | null>(null);
   const [birthday, setBirthdayState] = useState<string | null>(null);
@@ -116,6 +164,9 @@ export function UserDataProvider({ children }: { children: ReactNode }) {
   const [symptomsByDay, setSymptomsByDayState] = useState<Record<string, DaySymptoms>>({});
   const [disclaimerAccepted, setDisclaimerAccepted] = useState<boolean>(false);
   const [advancedTracking, setAdvancedTrackingState] = useState<boolean>(false);
+
+  const [physioMode, setPhysioModeState] = useState<PhysioMode>('none');
+
   const [loading, setLoading] = useState(true);
 
   const [selectedDayKey, setSelectedDayKeyState] = useState<string | null>(null);
@@ -134,6 +185,8 @@ export function UserDataProvider({ children }: { children: ReactNode }) {
           STORAGE_KEY_SYMPTOMS_BY_DAY,
           STORAGE_KEY_DISCLAIMER_ACCEPTED,
           STORAGE_KEY_ADVANCED_TRACKING,
+          STORAGE_KEY_PHYSIO_MODE,
+          STORAGE_KEY_SPECIAL_STATES,
         ]);
 
         const map = Object.fromEntries(stored);
@@ -167,6 +220,20 @@ export function UserDataProvider({ children }: { children: ReactNode }) {
         }
 
         if (map[STORAGE_KEY_DISCLAIMER_ACCEPTED]) setDisclaimerAccepted(map[STORAGE_KEY_DISCLAIMER_ACCEPTED] === 'true');
+
+        // physioMode: קודם חדש, אם אין אז מיגרציה מהישן
+        const loadedPhysio =
+          map[STORAGE_KEY_PHYSIO_MODE] !== null && map[STORAGE_KEY_PHYSIO_MODE] !== undefined
+            ? parsePhysioMode(map[STORAGE_KEY_PHYSIO_MODE])
+            : legacySpecialStatesToPhysioMode(map[STORAGE_KEY_SPECIAL_STATES] ?? null);
+
+        setPhysioModeState(loadedPhysio);
+
+        // אם עלינו מהגרסה הישנה, נשמור את המצב החדש לסטורייג' וננקה את הישן
+        if (!map[STORAGE_KEY_PHYSIO_MODE] && map[STORAGE_KEY_SPECIAL_STATES]) {
+          await AsyncStorage.setItem(STORAGE_KEY_PHYSIO_MODE, JSON.stringify(loadedPhysio));
+          await AsyncStorage.removeItem(STORAGE_KEY_SPECIAL_STATES);
+        }
 
         if (shouldForceAdvancedTracking(loadedGoal)) {
           setAdvancedTrackingState(true);
@@ -207,6 +274,12 @@ export function UserDataProvider({ children }: { children: ReactNode }) {
   const resetDisclaimer = async () => {
     setDisclaimerAccepted(false);
     await AsyncStorage.removeItem(STORAGE_KEY_DISCLAIMER_ACCEPTED);
+  };
+
+  const setPhysioMode = async (mode: PhysioMode) => {
+    const next = isPhysioMode(mode) ? mode : 'none';
+    setPhysioModeState(next);
+    await AsyncStorage.setItem(STORAGE_KEY_PHYSIO_MODE, JSON.stringify(next));
   };
 
   const setGoal = async (g: string) => {
@@ -256,13 +329,13 @@ export function UserDataProvider({ children }: { children: ReactNode }) {
 
     setPeriodHistoryState(prev => {
       const updated = uniqueSortedNewestToOldest([normalized, ...prev]);
-      AsyncStorage.setItem(STORAGE_KEY_PERIOD_HISTORY, JSON.stringify(updated));
+      void AsyncStorage.setItem(STORAGE_KEY_PERIOD_HISTORY, JSON.stringify(updated));
       return updated;
     });
 
     setPeriodStartState(prev => {
       if (prev) return prev;
-      AsyncStorage.setItem(STORAGE_KEY_PERIOD_START, normalized);
+      void AsyncStorage.setItem(STORAGE_KEY_PERIOD_START, normalized);
       return normalized;
     });
   };
@@ -271,7 +344,7 @@ export function UserDataProvider({ children }: { children: ReactNode }) {
     const normalized = toNoonIso(date);
     setPeriodHistoryState(prev => {
       const updated = prev.filter(d => d !== normalized);
-      AsyncStorage.setItem(STORAGE_KEY_PERIOD_HISTORY, JSON.stringify(updated));
+      void AsyncStorage.setItem(STORAGE_KEY_PERIOD_HISTORY, JSON.stringify(updated));
       return updated;
     });
   };
@@ -290,7 +363,7 @@ export function UserDataProvider({ children }: { children: ReactNode }) {
   const setSymptomsForDay = async (dayKey: string, patch: DaySymptoms) => {
     setSymptomsByDayState(prev => {
       const next = { ...prev, [dayKey]: { ...(prev[dayKey] || {}), ...patch } };
-      AsyncStorage.setItem(STORAGE_KEY_SYMPTOMS_BY_DAY, JSON.stringify(next));
+      void AsyncStorage.setItem(STORAGE_KEY_SYMPTOMS_BY_DAY, JSON.stringify(next));
       return next;
     });
   };
@@ -299,7 +372,7 @@ export function UserDataProvider({ children }: { children: ReactNode }) {
     setSymptomsByDayState(prev => {
       const next = { ...prev };
       delete next[dayKey];
-      AsyncStorage.setItem(STORAGE_KEY_SYMPTOMS_BY_DAY, JSON.stringify(next));
+      void AsyncStorage.setItem(STORAGE_KEY_SYMPTOMS_BY_DAY, JSON.stringify(next));
       return next;
     });
   };
@@ -316,6 +389,8 @@ export function UserDataProvider({ children }: { children: ReactNode }) {
       STORAGE_KEY_SYMPTOMS_BY_DAY,
       STORAGE_KEY_DISCLAIMER_ACCEPTED,
       STORAGE_KEY_ADVANCED_TRACKING,
+      STORAGE_KEY_PHYSIO_MODE,
+      STORAGE_KEY_SPECIAL_STATES, // ליתר ביטחון
     ]);
 
     setGoalState(null);
@@ -329,6 +404,7 @@ export function UserDataProvider({ children }: { children: ReactNode }) {
     setDisclaimerAccepted(false);
     setAdvancedTrackingState(false);
     setSelectedDayKeyState(null);
+    setPhysioModeState('none');
   };
 
   const cycleDatesOldestToNewest = useMemo(() => {
@@ -338,7 +414,7 @@ export function UserDataProvider({ children }: { children: ReactNode }) {
     ].filter(Boolean);
 
     const uniq = Array.from(new Set(items));
-    return uniq.sort(); // ISO noon, מיון לקסיקוגרפי עובד כאן
+    return uniq.sort();
   }, [periodHistory, periodStart]);
 
   const cycleLength = useMemo(() => {
@@ -375,13 +451,14 @@ export function UserDataProvider({ children }: { children: ReactNode }) {
         acceptDisclaimer,
         resetDisclaimer,
 
+        physioMode,
+        setPhysioMode,
+
         setGoal,
         setBirthday,
         setPeriodLength,
-
         setCycleLength,
         setCycleLengthManual,
-
         setPeriodStart,
         addPeriodDate,
         removePeriodDate,

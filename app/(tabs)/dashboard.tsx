@@ -5,13 +5,38 @@ import { useUserData } from '../../context/UserDataContext';
 import { computeCycleForecast } from '../../lib/cycleForecast';
 import { daysBetween as daysBetweenNoon, normalizeNoon } from '../../lib/date';
 
+type NormalizedPhysioMode = 'regular' | 'postpartum' | 'breastfeeding' | 'perimenopause' | 'postOCP';
+
+function normalizePhysioMode(mode: any): NormalizedPhysioMode {
+  if (mode === 'regular') return 'regular';
+  if (mode === 'none') return 'regular';
+
+  if (mode === 'postOCP') return 'postOCP';
+  if (mode === 'stoppingPills') return 'postOCP';
+
+  if (mode === 'postpartum') return 'postpartum';
+  if (mode === 'breastfeeding') return 'breastfeeding';
+  if (mode === 'perimenopause') return 'perimenopause';
+
+  return 'regular';
+}
+
 function formatDateIL(d: Date) {
   return d.toLocaleDateString('he-IL');
+}
+
+function modeBannerText(mode: NormalizedPhysioMode) {
+  if (mode === 'postpartum') return 'מצב אחרי לידה פעיל: התחזיות עשויות להיות פחות מדויקות בתקופה זו.';
+  if (mode === 'breastfeeding') return 'מצב הנקה פעיל: ביוץ ומחזורים יכולים להיות לא צפויים, ולכן התחזיות פחות מדויקות.';
+  if (mode === 'perimenopause') return 'מצב לקראת גיל המעבר פעיל: שכיחים שינויים במחזור ולכן התחזיות פחות מדויקות.';
+  if (mode === 'postOCP') return 'מצב הפסקת גלולות פעיל: לעיתים יש תקופת הסתגלות ולכן התחזיות פחות מדויקות.';
+  return null;
 }
 
 export default function DashboardScreen() {
   const {
     goal,
+    physioMode,
     periodHistory,
     periodStart,
     cycleLength,
@@ -21,6 +46,9 @@ export default function DashboardScreen() {
     endPeriodToday,
     symptomsByDay,
   } = useUserData();
+
+  const physioModeNorm = useMemo(() => normalizePhysioMode(physioMode), [physioMode]);
+  const isSpecialMode = physioModeNorm !== 'regular';
 
   const forecast = useMemo(() => {
     return computeCycleForecast({
@@ -57,12 +85,12 @@ export default function DashboardScreen() {
   const tryingToConceive = goal === 'conceive';
   const preventing = goal === 'prevent';
 
-  // התראת איחור במחזור
+  const modeNote = useMemo(() => modeBannerText(physioModeNorm), [physioModeNorm]);
+
   const lateInfo = useMemo(() => {
     const expected = forecast.nextPeriodStart;
     if (!expected) return { isLate: false, daysLate: 0 };
 
-    // גרייס של 2 ימים
     const daysLateRaw = daysBetweenNoon(normalizeNoon(expected), normalizeNoon(forecast.today));
     const daysLate = Math.max(0, daysLateRaw);
 
@@ -80,7 +108,6 @@ export default function DashboardScreen() {
     if (tryingToConceive) {
       return (
         `${baseLine}\n` +
-        `יש סיכוי טוב שזו בדיוק הסיבה שאנחנו מקוות לה.\n` +
         `אפשר לבצע בדיקת הריון, ואם היא שלילית - לחזור על הבדיקה בעוד 48 שעות.\n` +
         `אם הבדיקות שליליות והמחזור עדיין לא מופיע, מומלץ לפנות לבדיקה.`
       );
@@ -95,7 +122,6 @@ export default function DashboardScreen() {
       );
     }
 
-    // מעקב כללי
     return `${baseLine}\nמומלץ לשלול הריון באמצעות בדיקת הריון.\nאם האיחור מתמשך, מומלץ לפנות לבדיקה.`;
   }, [lateInfo.isLate, lateInfo.daysLate, forecast.nextPeriodStart, tryingToConceive, preventing]);
 
@@ -106,13 +132,20 @@ export default function DashboardScreen() {
       <View style={styles.cardTop}>
         <Text style={styles.bigTitle}>{forecast.cycleDayNumber ? `יום ${forecast.cycleDayNumber} במחזור` : 'מעקב מחזור'}</Text>
 
+        {modeNote && (
+          <View style={styles.modeBox}>
+            <Text style={styles.modeTitle}>מצב מיוחד פעיל</Text>
+            <Text style={styles.modeText}>{modeNote}</Text>
+          </View>
+        )}
+
         {forecast.lastPeriodStart && <Text style={styles.smallLine}>תחילת מחזור אחרון: {formatDateIL(forecast.lastPeriodStart)}</Text>}
         {forecast.computedPeriodEnd && <Text style={styles.smallLine}>סיום מחזור משוער: {formatDateIL(forecast.computedPeriodEnd)}</Text>}
         {forecast.nextPeriodStart && <Text style={styles.smallLine}>מחזור צפוי הבא: {formatDateIL(forecast.nextPeriodStart)}</Text>}
 
         <Text style={styles.goalLine}>{goalLabel}</Text>
 
-        {lateInfo.isLate && lateMessage && (
+        {lateInfo.isLate && lateMessage && !isSpecialMode && (
           <View style={styles.lateBox}>
             <Text style={styles.lateTitle}>המחזור מתעכב</Text>
             <Text style={styles.lateText}>{lateMessage}</Text>
@@ -138,9 +171,13 @@ export default function DashboardScreen() {
             </View>
 
             {forecast.latestPositiveOvulation?.date ? (
-              <Text style={styles.ttcNote}>זוהתה בדיקת ביוץ חיובית. ברוב המקרים הביוץ מתרחש 12-24 שעות לאחר בדיקה חיובית.</Text>
+              <Text style={styles.ttcNote}>זוהתה בדיקת ביוץ חיובית. לרוב הביוץ מתרחש 12 עד 24 שעות לאחר בדיקה חיובית.</Text>
             ) : (
-              <Text style={styles.ttcNote}>לא זוהתה בדיקת ביוץ חיובית במחזור הנוכחי. החישוב מבוסס על אורך המחזור שהוגדר.</Text>
+              <Text style={styles.ttcNote}>
+                {!isSpecialMode
+                  ? 'לא זוהתה בדיקת ביוץ חיובית במחזור הנוכחי. החישוב מבוסס על אורך המחזור שהוגדר.'
+                  : 'במצב מיוחד החישובים פחות מדויקים. כדי לדייק, מומלץ להזין בדיקות ביוץ או נתונים נוספים במעקב מתקדם.'}
+              </Text>
             )}
           </View>
         )}
@@ -228,6 +265,33 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     writingDirection: 'rtl',
     marginBottom: 6,
+  },
+
+  modeBox: {
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: '#e9ddff',
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 12,
+  },
+
+  modeTitle: {
+    fontWeight: '900',
+    fontSize: 13,
+    marginBottom: 6,
+    writingDirection: 'rtl',
+    textAlign: 'right',
+    color: '#6a1b9a',
+  },
+
+  modeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    writingDirection: 'rtl',
+    textAlign: 'right',
+    color: '#444',
+    lineHeight: 18,
   },
 
   smallLine: {
@@ -327,6 +391,7 @@ const styles = StyleSheet.create({
     writingDirection: 'rtl',
     textAlign: 'right',
     fontWeight: '700',
+    lineHeight: 18,
   },
 
   primaryBtn: {
@@ -421,6 +486,7 @@ const styles = StyleSheet.create({
     writingDirection: 'rtl',
     textAlign: 'right',
     fontWeight: '700',
+    lineHeight: 18,
   },
 
   badgesRow: { flexDirection: 'row-reverse', gap: 10, justifyContent: 'flex-start' },
