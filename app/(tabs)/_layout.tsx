@@ -16,9 +16,7 @@ export default function TabsLayout() {
         options={{
           title: 'לוח שנה',
           tabBarLabel: 'לוח שנה',
-          tabBarIcon: ({ color }) => (
-            <FontAwesome name="calendar" size={22} color={color} />
-          ),
+          tabBarIcon: ({ color }) => <FontAwesome name="calendar" size={22} color={color} />,
         }}
       />
 
@@ -27,9 +25,16 @@ export default function TabsLayout() {
         options={{
           title: 'מעקב',
           tabBarLabel: 'מעקב',
-          tabBarIcon: ({ color }) => (
-            <FontAwesome name="heart" size={22} color={color} />
-          ),
+          tabBarIcon: ({ color }) => <FontAwesome name="heart" size={22} color={color} />,
+        }}
+      />
+
+      <Tabs.Screen
+        name="insights"
+        options={{
+          title: 'תובנות',
+          tabBarLabel: 'תובנות',
+          tabBarIcon: ({ color }) => <FontAwesome name="bar-chart" size={22} color={color} />,
         }}
       />
 
@@ -38,9 +43,7 @@ export default function TabsLayout() {
         options={{
           title: 'הגדרות',
           tabBarLabel: 'הגדרות',
-          tabBarIcon: ({ color }) => (
-            <FontAwesome name="cog" size={22} color={color} />
-          ),
+          tabBarIcon: ({ color }) => <FontAwesome name="cog" size={22} color={color} />,
         }}
       />
     </Tabs>

@@ -87,11 +87,13 @@ export default function CalendarScreen() {
 
   const marks = useMemo(() => {
     const m = new Map<string, MarkType>();
+
+    // אם אין נתונים בסיסיים, לא מסמנים כלום
     if (!lastPeriodStart || !cycleLength || cycleLength <= 0) return m;
 
     const ovuIndexBase = Math.max(0, cycleLength - 14);
 
-    // בסיס מחזורי לפי אורך מחזור
+    // סימון בסיס לפי אורך מחזור
     for (const d of daysGrid) {
       const delta = daysBetween(d, lastPeriodStart);
       const mod = ((delta % cycleLength) + cycleLength) % cycleLength;
@@ -103,21 +105,26 @@ export default function CalendarScreen() {
         continue;
       }
 
-      if (mod === ovuIndexBase) {
-        m.set(key, 'ovulation');
-        continue;
-      }
+      // פוריות וביוץ מוצגים רק אם זה רלוונטי ליעד (כניסה להריון או מעקב כללי)
+      const shouldShowFertility = goal !== 'prevent';
 
-      if (mod >= Math.max(0, ovuIndexBase - 4) && mod <= Math.min(cycleLength - 1, ovuIndexBase + 1)) {
-        m.set(key, 'fertile');
-        continue;
+      if (shouldShowFertility) {
+        if (mod === ovuIndexBase) {
+          m.set(key, 'ovulation');
+          continue;
+        }
+
+        if (mod >= Math.max(0, ovuIndexBase - 4) && mod <= Math.min(cycleLength - 1, ovuIndexBase + 1)) {
+          m.set(key, 'fertile');
+          continue;
+        }
       }
 
       m.set(key, null);
     }
 
     // תיקון לפי ביוץ חיובי במחזור הנוכחי (מקור אמת)
-    if (latestPositiveOvulation) {
+    if (goal !== 'prevent' && latestPositiveOvulation) {
       // ננקה רק סימונים "פוריות" ו"ביוץ" מהבסיס, לא נוגעים במחזור
       for (const d of daysGrid) {
         const k = formatKey(d);
@@ -137,7 +144,7 @@ export default function CalendarScreen() {
     }
 
     return m;
-  }, [lastPeriodStart, cycleLength, periodLength, daysGrid, latestPositiveOvulation]);
+  }, [lastPeriodStart, cycleLength, periodLength, daysGrid, latestPositiveOvulation, goal]);
 
   const goPrevMonth = () => {
     const d = new Date(month);
@@ -196,6 +203,9 @@ export default function CalendarScreen() {
     return !!latestPositiveOvulation;
   }, [latestPositiveOvulation]);
 
+  const tryingToConceive = goal === 'conceive';
+  const showFertilityUI = goal !== 'prevent';
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
       <View style={styles.header}>
@@ -209,6 +219,13 @@ export default function CalendarScreen() {
           <Text style={styles.navBtnText}>{'>'}</Text>
         </Pressable>
       </View>
+
+      {tryingToConceive && (
+        <View style={styles.ttcBanner}>
+          <Text style={styles.ttcBannerTitle}>מנסה להיכנס להריון</Text>
+          <Text style={styles.ttcBannerText}>חלון הפוריות והביוץ מסומנים בלוח. אם תסמני בדיקת ביוץ חיובית, הסימון יתעדכן סביב היום שסומן.</Text>
+        </View>
+      )}
 
       <View style={styles.weekHeader}>
         {['א', 'ב', 'ג', 'ד', 'ה', 'ו', 'ש'].map(d => (
@@ -242,8 +259,8 @@ export default function CalendarScreen() {
                 !isInMonth && styles.cellOutMonth,
                 isTodayCell && styles.cellToday,
                 mark === 'period' && styles.cellPeriod,
-                mark === 'fertile' && styles.cellFertile,
-                mark === 'ovulation' && styles.cellOvulation,
+                showFertilityUI && mark === 'fertile' && styles.cellFertile,
+                showFertilityUI && mark === 'ovulation' && styles.cellOvulation,
                 isUserPeriodStart && styles.cellUserMarked,
               ]}
             >
@@ -273,15 +290,19 @@ export default function CalendarScreen() {
           <Text style={styles.legendText}>מחזור (חישוב)</Text>
         </View>
 
-        <View style={styles.legendRow}>
-          <View style={[styles.legendDot, styles.dotFertile]} />
-          <Text style={styles.legendText}>חלון פוריות</Text>
-        </View>
+        {showFertilityUI && (
+          <>
+            <View style={styles.legendRow}>
+              <View style={[styles.legendDot, styles.dotFertile]} />
+              <Text style={styles.legendText}>חלון פוריות</Text>
+            </View>
 
-        <View style={styles.legendRow}>
-          <View style={[styles.legendDot, styles.dotOvulation]} />
-          <Text style={styles.legendText}>ביוץ</Text>
-        </View>
+            <View style={styles.legendRow}>
+              <View style={[styles.legendDot, styles.dotOvulation]} />
+              <Text style={styles.legendText}>ביוץ</Text>
+            </View>
+          </>
+        )}
 
         <View style={styles.legendRow}>
           <View style={[styles.legendDot, styles.dotUser]} />
@@ -298,7 +319,7 @@ export default function CalendarScreen() {
           <Text style={styles.legendText}>הוזנה תמונה</Text>
         </View>
 
-        {hasPositiveInCycle && (
+        {showFertilityUI && hasPositiveInCycle && (
           <Text style={styles.legendHint}>
             זוהתה בדיקת ביוץ חיובית במחזור הנוכחי: הביוץ וחלון הפוריות מחושבים סביב היום שסומן כחיובי.
           </Text>
@@ -342,7 +363,7 @@ export default function CalendarScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {},
+  container: { flex: 1, backgroundColor: '#fff', paddingHorizontal: 18 },
   content: { paddingBottom: 28 },
 
   header: {
@@ -350,6 +371,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: 14,
+    marginTop: 10,
   },
 
   title: {
@@ -365,12 +387,39 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#eee',
+    backgroundColor: '#fff',
   },
 
   navBtnText: {
     fontSize: 18,
     fontWeight: '900',
     color: '#6a1b9a',
+  },
+
+  ttcBanner: {
+    borderWidth: 1,
+    borderColor: '#e9ddff',
+    borderRadius: 16,
+    padding: 12,
+    backgroundColor: '#f6f2ff',
+    marginBottom: 10,
+  },
+
+  ttcBannerTitle: {
+    fontSize: 14,
+    fontWeight: '900',
+    color: '#6a1b9a',
+    writingDirection: 'rtl',
+    textAlign: 'right',
+    marginBottom: 4,
+  },
+
+  ttcBannerText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#555',
+    writingDirection: 'rtl',
+    textAlign: 'right',
   },
 
   weekHeader: {
@@ -453,6 +502,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 1,
     borderColor: '#eee',
+    backgroundColor: '#fff',
   },
 
   legendRow: { flexDirection: 'row-reverse', alignItems: 'center', gap: 10 },
@@ -480,5 +530,6 @@ const styles = StyleSheet.create({
     color: '#666',
     textAlign: 'center',
     writingDirection: 'rtl',
+    fontWeight: '700',
   },
 });

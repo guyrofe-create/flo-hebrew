@@ -49,8 +49,13 @@ export default function DashboardScreen() {
     const lp = forecast.lastPeriodStart ? formatDateIL(forecast.lastPeriodStart) : '-';
     const ov = forecast.latestPositiveOvulation ? formatDateIL(forecast.latestPositiveOvulation.date) : '-';
     const next = forecast.nextPeriodStart ? formatDateIL(forecast.nextPeriodStart) : '-';
-    Alert.alert('דיבוג (זמני)', `תחילת מחזור אחרון: ${lp}\nבדיקת ביוץ חיובית במחזור הנוכחי: ${ov}\nמחזור צפוי הבא: ${next}`);
+    Alert.alert(
+      'דיבוג (זמני)',
+      `תחילת מחזור אחרון: ${lp}\nבדיקת ביוץ חיובית במחזור הנוכחי: ${ov}\nמחזור צפוי הבא: ${next}`
+    );
   };
+
+  const tryingToConceive = goal === 'conceive';
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
@@ -64,6 +69,34 @@ export default function DashboardScreen() {
         {forecast.nextPeriodStart && <Text style={styles.smallLine}>מחזור צפוי הבא: {formatDateIL(forecast.nextPeriodStart)}</Text>}
 
         <Text style={styles.goalLine}>{goalLabel}</Text>
+
+        {tryingToConceive && (
+          <View style={styles.ttcBox}>
+            <Text style={styles.ttcTitle}>מנסה להיכנס להריון</Text>
+
+            <View style={styles.ttcRow}>
+              <Text style={styles.ttcLabel}>חלון פוריות</Text>
+              <Text style={styles.ttcValue}>
+                {forecast.fertileWindow ? `${formatDateIL(forecast.fertileWindow.start)} - ${formatDateIL(forecast.fertileWindow.end)}` : '-'}
+              </Text>
+            </View>
+
+            <View style={styles.ttcRow}>
+              <Text style={styles.ttcLabel}>ביוץ</Text>
+              <Text style={styles.ttcValue}>{forecast.ovulationDate ? formatDateIL(forecast.ovulationDate) : '-'}</Text>
+            </View>
+
+            {forecast.latestPositiveOvulation?.date ? (
+              <Text style={styles.ttcNote}>
+                זוהתה בדיקת ביוץ חיובית. ברוב המקרים הביוץ מתרחש 12-24 שעות לאחר בדיקה חיובית.
+              </Text>
+            ) : (
+              <Text style={styles.ttcNote}>
+                לא זוהתה בדיקת ביוץ חיובית במחזור הנוכחי. החישוב מבוסס על אורך המחזור שהוגדר.
+              </Text>
+            )}
+          </View>
+        )}
 
         <Pressable style={styles.primaryBtn} onPress={() => void handlePrimary()}>
           <Text style={styles.primaryBtnText}>{isPeriodActive ? 'סיים מחזור היום' : 'התחיל לי מחזור היום'}</Text>
@@ -166,6 +199,60 @@ const styles = StyleSheet.create({
     color: '#6a1b9a',
     textAlign: 'center',
     writingDirection: 'rtl',
+  },
+
+  ttcBox: {
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: '#e9ddff',
+    borderRadius: 16,
+    padding: 12,
+    backgroundColor: '#fff',
+  },
+
+  ttcTitle: {
+    fontSize: 14,
+    fontWeight: '900',
+    color: '#6a1b9a',
+    writingDirection: 'rtl',
+    textAlign: 'right',
+    marginBottom: 8,
+  },
+
+  ttcRow: {
+    borderWidth: 1,
+    borderColor: '#eee',
+    borderRadius: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    marginBottom: 8,
+    flexDirection: 'row-reverse',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#fafafa',
+  },
+
+  ttcLabel: {
+    fontWeight: '900',
+    color: '#111',
+    writingDirection: 'rtl',
+    textAlign: 'right',
+  },
+
+  ttcValue: {
+    fontWeight: '800',
+    color: '#111',
+    writingDirection: 'rtl',
+    textAlign: 'left',
+  },
+
+  ttcNote: {
+    marginTop: 4,
+    fontSize: 12,
+    color: '#555',
+    writingDirection: 'rtl',
+    textAlign: 'right',
+    fontWeight: '700',
   },
 
   primaryBtn: {

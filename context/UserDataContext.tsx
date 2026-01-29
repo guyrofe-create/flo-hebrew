@@ -102,6 +102,10 @@ function uniqueSortedNewestToOldest(items: string[]): string[] {
   return uniq.sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
 }
 
+function shouldForceAdvancedTracking(goal: string | null) {
+  return goal === 'conceive' || goal === 'prevent';
+}
+
 export function UserDataProvider({ children }: { children: ReactNode }) {
   const [goal, setGoalState] = useState<string | null>(null);
   const [birthday, setBirthdayState] = useState<string | null>(null);
@@ -135,7 +139,10 @@ export function UserDataProvider({ children }: { children: ReactNode }) {
 
         const map = Object.fromEntries(stored);
 
-        if (map[STORAGE_KEY_GOAL]) setGoalState(map[STORAGE_KEY_GOAL]);
+        const loadedGoal = map[STORAGE_KEY_GOAL] || null;
+        const loadedAdv = map[STORAGE_KEY_ADVANCED_TRACKING] === 'true';
+
+        if (loadedGoal) setGoalState(loadedGoal);
         if (map[STORAGE_KEY_BIRTHDAY]) setBirthdayState(map[STORAGE_KEY_BIRTHDAY]);
 
         if (map[STORAGE_KEY_PERIOD_HISTORY]) {
@@ -161,7 +168,16 @@ export function UserDataProvider({ children }: { children: ReactNode }) {
         }
 
         if (map[STORAGE_KEY_DISCLAIMER_ACCEPTED]) setDisclaimerAccepted(map[STORAGE_KEY_DISCLAIMER_ACCEPTED] === 'true');
-        if (map[STORAGE_KEY_ADVANCED_TRACKING]) setAdvancedTrackingState(map[STORAGE_KEY_ADVANCED_TRACKING] === 'true');
+
+        // כלל חדש: אם המטרה היא כניסה להריון או מניעה, מעקב מתקדם חייב להיות דלוק
+        if (shouldForceAdvancedTracking(loadedGoal)) {
+          setAdvancedTrackingState(true);
+          if (!loadedAdv) {
+            await AsyncStorage.setItem(STORAGE_KEY_ADVANCED_TRACKING, 'true');
+          }
+        } else {
+          setAdvancedTrackingState(loadedAdv);
+        }
       } finally {
         setLoading(false);
       }
@@ -175,6 +191,13 @@ export function UserDataProvider({ children }: { children: ReactNode }) {
   };
 
   const setAdvancedTracking = async (v: boolean) => {
+    // אם המטרה מחייבת מעקב מתקדם, לא מאפשרים לכבות
+    if (shouldForceAdvancedTracking(goal) && !v) {
+      setAdvancedTrackingState(true);
+      await AsyncStorage.setItem(STORAGE_KEY_ADVANCED_TRACKING, 'true');
+      return;
+    }
+
     setAdvancedTrackingState(v);
     await AsyncStorage.setItem(STORAGE_KEY_ADVANCED_TRACKING, v ? 'true' : 'false');
   };
@@ -192,6 +215,12 @@ export function UserDataProvider({ children }: { children: ReactNode }) {
   const setGoal = async (g: string) => {
     setGoalState(g);
     await AsyncStorage.setItem(STORAGE_KEY_GOAL, g);
+
+    // כלל חדש: במטרות "כניסה להריון" ו"מניעה" מעקב מתקדם נדלק אוטומטית וננעל לדלוק
+    if (g === 'conceive' || g === 'prevent') {
+      setAdvancedTrackingState(true);
+      await AsyncStorage.setItem(STORAGE_KEY_ADVANCED_TRACKING, 'true');
+    }
   };
 
   const setBirthday = async (d: string | null) => {
@@ -351,7 +380,6 @@ export function UserDataProvider({ children }: { children: ReactNode }) {
         setBirthday,
         setPeriodLength,
 
-        // הוספה
         setCycleLength,
 
         setCycleLengthManual,
