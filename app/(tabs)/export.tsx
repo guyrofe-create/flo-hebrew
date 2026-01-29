@@ -1,6 +1,4 @@
 // app/(tabs)/export.tsx
-import * as Print from 'expo-print';
-import * as Sharing from 'expo-sharing';
 import React, { useMemo, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
@@ -15,12 +13,30 @@ function escHtml(s: string) {
     .replace(/"/g, '&quot;');
 }
 
+// Lazy native loaders (מונע קריסה אם המודול לא בבילד)
+async function loadPrint() {
+  try {
+    const mod = await import('expo-print');
+    return mod;
+  } catch {
+    return null;
+  }
+}
+
+async function loadSharing() {
+  try {
+    const mod = await import('expo-sharing');
+    return mod;
+  } catch {
+    return null;
+  }
+}
+
 export default function ExportScreen() {
   const { periodHistory, symptomsByDay } = useUserData();
   const [busy, setBusy] = useState(false);
 
   const model = useMemo(() => buildReportModel({ periodHistory, symptomsByDay }), [periodHistory, symptomsByDay]);
-
   const canExport = model.periodHistoryUniq.length > 0;
 
   const buildHtml = () => {
@@ -107,13 +123,32 @@ export default function ExportScreen() {
       return;
     }
 
+    setBusy(true);
     try {
-      setBusy(true);
+      const Print = await loadPrint();
+      const Sharing = await loadSharing();
+
+      if (!Print || !Print.printToFileAsync) {
+        Alert.alert(
+          'ייצוא לא זמין בבילד הזה',
+          'נראה שהוספת expo-print אבל ה-Dev Build לא נבנה מחדש. צריך לבנות Dev Client חדש כדי לאפשר ייצוא PDF.'
+        );
+        return;
+      }
 
       const html = buildHtml();
       const { uri } = await Print.printToFileAsync({ html });
 
-      if (!(await Sharing.isAvailableAsync())) {
+      if (!Sharing || !Sharing.isAvailableAsync || !Sharing.shareAsync) {
+        Alert.alert(
+          'שיתוף לא זמין בבילד הזה',
+          'הקובץ נוצר, אבל מודול השיתוף לא זמין בבילד הזה. בנה Dev Client חדש כדי לשתף.'
+        );
+        return;
+      }
+
+      const ok = await Sharing.isAvailableAsync();
+      if (!ok) {
         Alert.alert('שיתוף לא זמין', 'במכשיר הזה אין שיתוף קבצים זמין. הקובץ נוצר מקומית.');
         return;
       }
@@ -123,7 +158,7 @@ export default function ExportScreen() {
         dialogTitle: 'שיתוף דוח לרופא',
         UTI: 'com.adobe.pdf',
       });
-    } catch {
+    } catch (e) {
       Alert.alert('שגיאה', 'לא הצלחתי לייצא דוח. נסה שוב.');
     } finally {
       setBusy(false);
@@ -144,7 +179,11 @@ export default function ExportScreen() {
         <Text style={styles.line}>סימפטומים חריגים</Text>
       </View>
 
-      <Pressable onPress={exportPdf} style={[styles.btn, (!canExport || busy) && styles.btnDisabled]} disabled={!canExport || busy}>
+      <Pressable
+        onPress={exportPdf}
+        style={[styles.btn, (!canExport || busy) && styles.btnDisabled]}
+        disabled={!canExport || busy}
+      >
         <Text style={[styles.btnText, (!canExport || busy) && styles.btnTextDisabled]}>
           {busy ? 'מייצר...' : 'ייצוא PDF ושיתוף'}
         </Text>

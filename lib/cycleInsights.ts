@@ -2,22 +2,24 @@
 import { normalizeNoon } from './date';
 
 export type CycleLengthPoint = {
-  index: number;            // 1..N
-  startIso: string;         // מחזור "נוכחי" שממנו מחשבים עד הבא
-  nextStartIso: string;     // תחילת המחזור הבא
-  lengthDays: number;       // אורך המחזור בימים
+  index: number;        // 1..N
+  startIso: string;     // מחזור "נוכחי" שממנו מחשבים עד הבא
+  nextStartIso: string; // תחילת המחזור הבא
+  lengthDays: number;   // אורך המחזור בימים
 };
 
 export type CycleInsights = {
   points: CycleLengthPoint[];
 
-  n: number;                // מספר אורכי מחזור שיש לנו (N)
+  n: number;            // מספר אורכי מחזור שיש לנו (N)
   avg: number | null;
   stdDev: number | null;
+  // Alias אופציונלי לשמירה על תאימות אם קוד אחר מצפה לשם אחר
+  std?: number | null;
+
   min: number | null;
   max: number | null;
 
-  // FIGO System 1 (18-45): frequent <24, infrequent >38, irregular variation >7 or >9 (age-dependent)
   hasOutOfRange: boolean;     // מחזור <24 או >38 (לגיל 18-45)
   isIrregular: boolean;       // variation > threshold (כשיש מספיק נתונים) או out-of-range
   irregularReason: string[];  // להסבר למשתמשת
@@ -39,17 +41,13 @@ function safeDate(iso: string) {
 function figoIrregularityThreshold(ageYears?: number): number | null {
   if (typeof ageYears !== 'number' || !Number.isFinite(ageYears)) return null;
 
-  // FIGO definitions are based on 18–45; within that:
-  // irregular if cycle lengths vary by >7 days (18–25 and 42–45) OR >9 days (26–41)
   if (ageYears >= 18 && ageYears <= 25) return 7;
   if (ageYears >= 26 && ageYears <= 41) return 9;
   if (ageYears >= 42 && ageYears <= 45) return 7;
 
-  // מחוץ לטווח 18–45: FIGO System 1 פחות מבוסס נתונים; נחזיר null כדי שלא “נפסוק” רשמית.
   return null;
 }
 
-// ageYears אופציונלי כדי להתאים לספי FIGO של 7/9 ימים
 export function computeCycleInsights(periodHistoryIso: string[] | undefined, ageYears?: number): CycleInsights {
   const src = Array.isArray(periodHistoryIso) ? periodHistoryIso.filter(Boolean) : [];
   const dates: string[] = [];
@@ -60,7 +58,6 @@ export function computeCycleInsights(periodHistoryIso: string[] | undefined, age
     dates.push(d.toISOString());
   }
 
-  // מיון עולה (ישן -> חדש) כדי לחשב אורכי מחזור בין תחילות עוקבות
   const sorted = [...new Set(dates)].sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
 
   const points: CycleLengthPoint[] = [];
@@ -72,7 +69,6 @@ export function computeCycleInsights(periodHistoryIso: string[] | undefined, age
     if (!a || !b) continue;
 
     const len = daysBetween(a, b);
-    // סינון בסיסי נגד קפיצות הזויות (עדיין משאיר מרחב)
     if (!Number.isFinite(len) || len < 10 || len > 90) continue;
 
     points.push({
@@ -90,29 +86,24 @@ export function computeCycleInsights(periodHistoryIso: string[] | undefined, age
 
   const stdDev = (() => {
     if (!n || avg === null) return null;
-    const variance = lengths.reduce((s, x) => s + Math.pow(x - avg, 2), 0) / n; // population SD
+    const variance = lengths.reduce((s, x) => s + Math.pow(x - avg, 2), 0) / n;
     return Math.sqrt(variance);
   })();
 
   const min = n ? Math.min(...lengths) : null;
   const max = n ? Math.max(...lengths) : null;
 
-  const variationDays = (min !== null && max !== null) ? (max - min) : null;
+  const variationDays = min !== null && max !== null ? (max - min) : null;
 
   const threshold = figoIrregularityThreshold(ageYears);
 
-  // Out-of-range לפי FIGO System 1 מיועד לגיל 18–45
   const inFigoAgeRange = typeof ageYears === 'number' && ageYears >= 18 && ageYears <= 45;
   const hasOutOfRange = inFigoAgeRange ? lengths.some(l => l < 24 || l > 38) : false;
 
-  // “אי סדירות” לפי FIGO: variation > threshold (צריך לפחות 2 אורכי מחזור כדי להשוות)
   const enoughForVariation = n >= 2 && variationDays !== null;
-  const variationIrregular =
-    threshold !== null && enoughForVariation && variationDays > threshold;
+  const variationIrregular = threshold !== null && enoughForVariation && variationDays > threshold;
 
-  // אם אין גיל/מחוץ לטווח: לא נפסוק “אי סדירות” רשמית, רק נציג נתונים (אלא אם יש out-of-range בתוך הטווח)
-  const isIrregular =
-    (threshold !== null ? (hasOutOfRange || variationIrregular) : hasOutOfRange);
+  const isIrregular = threshold !== null ? (hasOutOfRange || variationIrregular) : hasOutOfRange;
 
   const irregularReason: string[] = [];
 
@@ -128,10 +119,8 @@ export function computeCycleInsights(periodHistoryIso: string[] | undefined, age
     irregularReason.push('נמצא לפחות מחזור אחד קצר מ-24 ימים או ארוך מ-38 ימים (הגדרת FIGO לגיל 18 עד 45).');
   }
 
-  if (threshold !== null && enoughForVariation) {
-    if (variationDays !== null && variationDays > threshold) {
-      irregularReason.push(`השונות בין אורכי המחזורים גבוהה: הפער בין הקצר לארוך הוא ${variationDays} ימים (סף FIGO: יותר מ-${threshold}).`);
-    }
+  if (threshold !== null && enoughForVariation && variationDays !== null && variationDays > threshold) {
+    irregularReason.push(`השונות בין אורכי המחזורים גבוהה: הפער בין הקצר לארוך הוא ${variationDays} ימים (סף FIGO: יותר מ-${threshold}).`);
   }
 
   return {
@@ -139,6 +128,7 @@ export function computeCycleInsights(periodHistoryIso: string[] | undefined, age
     n,
     avg,
     stdDev,
+    std: stdDev, // alias אופציונלי
     min,
     max,
     hasOutOfRange,

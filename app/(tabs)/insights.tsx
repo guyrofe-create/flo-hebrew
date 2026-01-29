@@ -2,12 +2,10 @@
 import React, { useMemo } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import Svg, { Line, Polyline, Rect, Text as SvgText } from 'react-native-svg';
-import { useUserData } from '../../context/UserDataContext';
-import { computeCycleInsights } from '../../lib/cycleInsights';
 
-function formatDateIL(iso: string) {
-  return new Date(iso).toLocaleDateString('he-IL');
-}
+import { useUserData } from '../../context/UserDataContext';
+import { computeClinicalInsights, type ClinicalFlag } from '../../lib/clinicalInsights';
+import { computeCycleInsights } from '../../lib/cycleInsights';
 
 function round1(n: number) {
   return Math.round(n * 10) / 10;
@@ -26,8 +24,10 @@ function Chart({ values, avg }: { values: number[]; avg: number | null }) {
   const padB = 26;
 
   const n = values.length;
-  const minY = Math.min(20, ...values) - 2;
-  const maxY = Math.max(40, ...values) + 2;
+
+  // הגנה על מצב שאין ערכים
+  const minY = values.length ? Math.min(20, ...values) - 2 : 18;
+  const maxY = values.length ? Math.max(40, ...values) + 2 : 42;
 
   const xAt = (i: number) => {
     if (n <= 1) return padL;
@@ -96,9 +96,32 @@ function Chart({ values, avg }: { values: number[]; avg: number | null }) {
 }
 
 export default function InsightsScreen() {
-  const { periodHistory } = useUserData();
-  const insights = useMemo(() => computeCycleInsights(periodHistory), [periodHistory]);
+  const { periodHistory, periodStart, periodLength } = useUserData();
+
+  // כולל גם periodStart כדי שלא נקבל "0 מחזורים" כשיש תאריך יחיד
+  const cycleDatesOldestToNewest = useMemo(() => {
+    const items = [
+      ...(Array.isArray(periodHistory) ? periodHistory : []),
+      ...(periodStart ? [periodStart] : []),
+    ].filter(Boolean);
+
+    const uniq = Array.from(new Set(items));
+    return uniq.sort();
+  }, [periodHistory, periodStart]);
+
+  const insights = useMemo(() => computeCycleInsights(cycleDatesOldestToNewest), [cycleDatesOldestToNewest]);
   const values = insights.points.map(p => p.lengthDays);
+
+  const clinicalFlags: ClinicalFlag[] = useMemo(() => {
+    return computeClinicalInsights({
+      today: new Date(),
+      periodHistory: Array.isArray(periodHistory) ? periodHistory : [],
+      periodStart: periodStart ?? null,
+      periodLength,
+    });
+  }, [periodHistory, periodStart, periodLength]);
+
+  const hasClinical = clinicalFlags.length > 0;
 
   const dataLevelText = useMemo(() => {
     if (insights.n < 3) return 'אין עדיין מספיק מחזורים להערכת דפוס מחזורי';
@@ -124,6 +147,21 @@ export default function InsightsScreen() {
           <Text style={[styles.statusText, insights.isIrregular ? styles.bad : styles.good]}>{regularityText}</Text>
         )}
       </View>
+
+      {hasClinical && (
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>תובנות רפואיות בסיסיות</Text>
+
+          {clinicalFlags.slice(0, 5).map((f, idx) => (
+            <View key={`${f.type}-${idx}`} style={styles.flagRow}>
+              <Text style={styles.flagTitle}>{f.title}</Text>
+              <Text style={styles.line}>{f.message}</Text>
+            </View>
+          ))}
+
+          <Text style={styles.smallNote}>אם נראה שיש דפוס שחוזר, מומלץ לשקול מעקב רפואי לפי הצורך.</Text>
+        </View>
+      )}
 
       <View style={styles.card}>
         <Text style={styles.cardTitle}>סיכום מספרי</Text>
@@ -184,15 +222,11 @@ const styles = StyleSheet.create({
   bad: { color: '#b00020' },
 
   chartWrap: {},
-  smallNote: {
-    marginTop: 8,
-    fontSize: 12,
-    color: '#666',
-    fontWeight: '700',
-    writingDirection: 'rtl',
-    textAlign: 'right',
-    lineHeight: 16,
-  },
+  smallNote: { marginTop: 8, fontSize: 12, color: '#666', fontWeight: '700', writingDirection: 'rtl', textAlign: 'right', lineHeight: 16 },
+
+  flagRow: { marginBottom: 10 },
+  flagTitle: { fontSize: 14, fontWeight: '900', color: '#111', writingDirection: 'rtl', textAlign: 'right', marginBottom: 4 },
+  line: { fontSize: 13, fontWeight: '800', color: '#333', writingDirection: 'rtl', textAlign: 'right', marginBottom: 6 },
 
   disclaimer: { marginTop: 14, fontSize: 12, color: '#666', textAlign: 'center', writingDirection: 'rtl', fontWeight: '700' },
 });

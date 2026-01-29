@@ -42,8 +42,8 @@ export type UserData = {
   setPeriodLength: (days: number) => Promise<void>;
 
   setCycleLength: (days: number) => Promise<void>;
-
   setCycleLengthManual: (days: number) => Promise<void>;
+
   setPeriodStart: (date: string) => Promise<void>;
   addPeriodDate: (date: string) => Promise<void>;
   removePeriodDate: (date: string) => Promise<void>;
@@ -332,9 +332,13 @@ export function UserDataProvider({ children }: { children: ReactNode }) {
   };
 
   const cycleDatesOldestToNewest = useMemo(() => {
-    if (periodHistory.length > 0) return [...periodHistory].sort();
-    if (periodStart) return [periodStart];
-    return [];
+    const items = [
+      ...(Array.isArray(periodHistory) ? periodHistory : []),
+      ...(periodStart ? [periodStart] : []),
+    ].filter(Boolean);
+
+    const uniq = Array.from(new Set(items));
+    return uniq.sort(); // ISO noon, מיון לקסיקוגרפי עובד כאן
   }, [periodHistory, periodStart]);
 
   const cycleLength = useMemo(() => {
