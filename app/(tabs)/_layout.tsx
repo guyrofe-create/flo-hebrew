@@ -39,6 +39,15 @@ export default function TabsLayout() {
       />
 
       <Tabs.Screen
+        name="export"
+        options={{
+          title: 'דוח לרופא',
+          tabBarLabel: 'דוח',
+          tabBarIcon: ({ color }) => <FontAwesome name="file-pdf-o" size={22} color={color} />,
+        }}
+      />
+
+      <Tabs.Screen
         name="settings"
         options={{
           title: 'הגדרות',

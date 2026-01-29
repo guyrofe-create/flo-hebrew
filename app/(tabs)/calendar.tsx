@@ -62,8 +62,10 @@ export default function CalendarScreen() {
     return getLatestPeriodStart(periodHistory, periodStart);
   }, [periodHistory, periodStart]);
 
+  // FIX: לא להשתמש ב toISOString (UTC) כדי למנוע סטייה של יום. לייצר ISO בצהריים דרך dayKey.
   const lastPeriodStartIso = useMemo(() => {
-    return lastPeriodStart ? lastPeriodStart.toISOString() : null;
+    if (!lastPeriodStart) return null;
+    return isoNoonFromKey(formatKey(lastPeriodStart));
   }, [lastPeriodStart]);
 
   // FIX: לכלול גם periodStart כדי שסימון "תחילת מחזור שהוזנה" יעבוד גם אם אין היסטוריה

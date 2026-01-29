@@ -4,7 +4,7 @@ import { useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { useUserData } from '../../context/UserDataContext';
-import { computeCycleForecast } from '../../lib/cycleForecast';
+import { computeCycleForecast, getLatestPeriodStart } from '../../lib/cycleForecast';
 import { normalizeNoon } from '../../lib/date';
 import {
     cancelDailyReminder,
@@ -63,30 +63,29 @@ export default function SettingsScreen() {
 
   const timeLabel = useMemo(() => `${pad2(dailyTime.hour)}:${pad2(dailyTime.minute)}`, [dailyTime]);
 
-  const lastPeriodStartIso = useMemo(() => {
-    const newest = periodHistory?.length ? periodHistory[0] : periodStart;
-    if (!newest) return null;
-    const dt = normalizeNoon(new Date(newest));
-    if (Number.isNaN(dt.getTime())) return null;
-    return dt.toISOString();
-  }, [periodHistory, periodStart]);
-
-  const effectiveCycleLengthForReminders = useMemo(() => {
-    const forecast = computeCycleForecast({
+  const forecast = useMemo(() => {
+    return computeCycleForecast({
       periodHistory,
       periodStart,
       cycleLength,
       periodLength,
       symptomsByDay,
     });
+  }, [periodHistory, periodStart, cycleLength, periodLength, symptomsByDay]);
 
+  const lastPeriodStartIso = useMemo(() => {
+    const latest = getLatestPeriodStart(periodHistory, periodStart);
+    if (!latest) return null;
+    return normalizeNoon(latest).toISOString();
+  }, [periodHistory, periodStart]);
+
+  const effectiveCycleLengthForReminders = useMemo(() => {
     if (forecast.lastPeriodStart && forecast.nextPeriodStart) {
       const d = diffDays(forecast.lastPeriodStart, forecast.nextPeriodStart);
       if (Number.isFinite(d) && d >= 18 && d <= 60) return d;
     }
-
     return cycleLength;
-  }, [periodHistory, periodStart, cycleLength, periodLength, symptomsByDay]);
+  }, [forecast.lastPeriodStart, forecast.nextPeriodStart, cycleLength]);
 
   const forcedAdvanced = useMemo(() => goal === 'conceive' || goal === 'prevent', [goal]);
 
@@ -231,11 +230,7 @@ export default function SettingsScreen() {
     try {
       setShowPicker(false);
 
-      await Promise.all([
-        cancelDailyReminder(),
-        cancelPredictedPeriodReminder(),
-        setPredictedPeriodReminderEnabled(false),
-      ]);
+      await Promise.all([cancelDailyReminder(), cancelPredictedPeriodReminder(), setPredictedPeriodReminderEnabled(false)]);
 
       await resetUserData();
 
@@ -274,9 +269,7 @@ export default function SettingsScreen() {
         <View style={styles.row}>
           <View style={styles.rowTextWrap}>
             <Text style={styles.rowTitle}>מטרה נוכחית</Text>
-            <Text style={styles.rowSub}>
-              {goalLabel(goal)}. אפשר לשנות בכל רגע - למשל מעבר ממעקב למניעה או לכניסה להריון.
-            </Text>
+            <Text style={styles.rowSub}>{goalLabel(goal)}. אפשר לשנות בכל רגע - למשל מעבר ממעקב למניעה או לכניסה להריון.</Text>
           </View>
 
           <Pressable style={styles.smallBtn} onPress={onChangeGoal}>
@@ -296,18 +289,10 @@ export default function SettingsScreen() {
           <View style={styles.rowTextWrap}>
             <Text style={styles.rowTitle}>מעקב מתקדם</Text>
             <Text style={styles.rowSub}>מציג שדות נוספים ביומן: הפרשות, יחסים, בדיקות ביוץ, חום בסיסי (BBT).</Text>
-            {forcedAdvanced && (
-              <Text style={styles.lockHint}>
-                במטרה {goalLabel(goal)} מעקב מתקדם חייב להיות פעיל.
-              </Text>
-            )}
+            {forcedAdvanced && <Text style={styles.lockHint}>במטרה {goalLabel(goal)} מעקב מתקדם חייב להיות פעיל.</Text>}
           </View>
 
-          <Switch
-            value={advancedTracking}
-            onValueChange={(v) => void setAdvancedTracking(v)}
-            disabled={forcedAdvanced}
-          />
+          <Switch value={advancedTracking} onValueChange={v => void setAdvancedTracking(v)} disabled={forcedAdvanced} />
         </View>
 
         <Text style={styles.cardNote}>
@@ -460,7 +445,15 @@ const styles = StyleSheet.create({
 
   rowTextWrap: { flex: 1 },
   rowTitle: { fontWeight: '900', fontSize: 15, color: '#111', writingDirection: 'rtl', textAlign: 'right' },
-  rowSub: { marginTop: 4, fontSize: 12, color: '#666', fontWeight: '700', writingDirection: 'rtl', textAlign: 'right', lineHeight: 16 },
+  rowSub: {
+    marginTop: 4,
+    fontSize: 12,
+    color: '#666',
+    fontWeight: '700',
+    writingDirection: 'rtl',
+    textAlign: 'right',
+    lineHeight: 16,
+  },
 
   lockHint: {
     marginTop: 6,

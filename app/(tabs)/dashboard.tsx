@@ -3,15 +3,10 @@ import React, { useMemo } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useUserData } from '../../context/UserDataContext';
 import { computeCycleForecast } from '../../lib/cycleForecast';
-
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
+import { daysBetween as daysBetweenNoon, normalizeNoon } from '../../lib/date';
 
 function formatDateIL(d: Date) {
   return d.toLocaleDateString('he-IL');
-}
-
-function daysBetween(a: Date, b: Date) {
-  return Math.floor((a.getTime() - b.getTime()) / MS_PER_DAY);
 }
 
 export default function DashboardScreen() {
@@ -56,15 +51,11 @@ export default function DashboardScreen() {
     const lp = forecast.lastPeriodStart ? formatDateIL(forecast.lastPeriodStart) : '-';
     const ov = forecast.latestPositiveOvulation ? formatDateIL(forecast.latestPositiveOvulation.date) : '-';
     const next = forecast.nextPeriodStart ? formatDateIL(forecast.nextPeriodStart) : '-';
-    Alert.alert(
-      'דיבוג (זמני)',
-      `תחילת מחזור אחרון: ${lp}\nבדיקת ביוץ חיובית במחזור הנוכחי: ${ov}\nמחזור צפוי הבא: ${next}`
-    );
+    Alert.alert('דיבוג (זמני)', `תחילת מחזור אחרון: ${lp}\nבדיקת ביוץ חיובית במחזור הנוכחי: ${ov}\nמחזור צפוי הבא: ${next}`);
   };
 
   const tryingToConceive = goal === 'conceive';
   const preventing = goal === 'prevent';
-  const trackingOnly = !goal || goal === 'track' || goal === 'general';
 
   // התראת איחור במחזור
   const lateInfo = useMemo(() => {
@@ -72,7 +63,7 @@ export default function DashboardScreen() {
     if (!expected) return { isLate: false, daysLate: 0 };
 
     // גרייס של 2 ימים
-    const daysLateRaw = daysBetween(forecast.today, expected);
+    const daysLateRaw = daysBetweenNoon(normalizeNoon(expected), normalizeNoon(forecast.today));
     const daysLate = Math.max(0, daysLateRaw);
 
     const isLate = daysLate >= 2;
@@ -105,11 +96,7 @@ export default function DashboardScreen() {
     }
 
     // מעקב כללי
-    return (
-      `${baseLine}\n` +
-      `מומלץ לשלול הריון באמצעות בדיקת הריון.\n` +
-      `אם האיחור מתמשך, מומלץ לפנות לבדיקה.`
-    );
+    return `${baseLine}\nמומלץ לשלול הריון באמצעות בדיקת הריון.\nאם האיחור מתמשך, מומלץ לפנות לבדיקה.`;
   }, [lateInfo.isLate, lateInfo.daysLate, forecast.nextPeriodStart, tryingToConceive, preventing]);
 
   return (
@@ -139,7 +126,9 @@ export default function DashboardScreen() {
             <View style={styles.ttcRow}>
               <Text style={styles.ttcLabel}>חלון פוריות</Text>
               <Text style={styles.ttcValue}>
-                {forecast.fertileWindow ? `${formatDateIL(forecast.fertileWindow.start)} - ${formatDateIL(forecast.fertileWindow.end)}` : '-'}
+                {forecast.fertileWindow
+                  ? `${formatDateIL(forecast.fertileWindow.start)} - ${formatDateIL(forecast.fertileWindow.end)}`
+                  : '-'}
               </Text>
             </View>
 
@@ -149,9 +138,7 @@ export default function DashboardScreen() {
             </View>
 
             {forecast.latestPositiveOvulation?.date ? (
-              <Text style={styles.ttcNote}>
-                זוהתה בדיקת ביוץ חיובית. ברוב המקרים הביוץ מתרחש 12-24 שעות לאחר בדיקה חיובית.
-              </Text>
+              <Text style={styles.ttcNote}>זוהתה בדיקת ביוץ חיובית. ברוב המקרים הביוץ מתרחש 12-24 שעות לאחר בדיקה חיובית.</Text>
             ) : (
               <Text style={styles.ttcNote}>לא זוהתה בדיקת ביוץ חיובית במחזור הנוכחי. החישוב מבוסס על אורך המחזור שהוגדר.</Text>
             )}
