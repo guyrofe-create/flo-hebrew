@@ -1,10 +1,17 @@
+// app/(tabs)/dashboard.tsx
 import React, { useMemo } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useUserData } from '../../context/UserDataContext';
 import { computeCycleForecast } from '../../lib/cycleForecast';
 
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
 function formatDateIL(d: Date) {
   return d.toLocaleDateString('he-IL');
+}
+
+function daysBetween(a: Date, b: Date) {
+  return Math.floor((a.getTime() - b.getTime()) / MS_PER_DAY);
 }
 
 export default function DashboardScreen() {
@@ -56,6 +63,54 @@ export default function DashboardScreen() {
   };
 
   const tryingToConceive = goal === 'conceive';
+  const preventing = goal === 'prevent';
+  const trackingOnly = !goal || goal === 'track' || goal === 'general';
+
+  // התראת איחור במחזור
+  const lateInfo = useMemo(() => {
+    const expected = forecast.nextPeriodStart;
+    if (!expected) return { isLate: false, daysLate: 0 };
+
+    // גרייס של 2 ימים
+    const daysLateRaw = daysBetween(forecast.today, expected);
+    const daysLate = Math.max(0, daysLateRaw);
+
+    const isLate = daysLate >= 2;
+    return { isLate, daysLate };
+  }, [forecast.today, forecast.nextPeriodStart]);
+
+  const lateMessage = useMemo(() => {
+    if (!lateInfo.isLate) return null;
+
+    const expected = forecast.nextPeriodStart ? formatDateIL(forecast.nextPeriodStart) : null;
+    const daysText = lateInfo.daysLate > 0 ? ` (עיכוב של כ-${lateInfo.daysLate} ימים)` : '';
+    const baseLine = expected ? `המחזור היה צפוי ב-${expected}${daysText}.` : `המחזור מתעכב${daysText}.`;
+
+    if (tryingToConceive) {
+      return (
+        `${baseLine}\n` +
+        `יש סיכוי טוב שזו בדיוק הסיבה שאנחנו מקוות לה.\n` +
+        `אפשר לבצע בדיקת הריון, ואם היא שלילית - לחזור על הבדיקה בעוד 48 שעות.\n` +
+        `אם הבדיקות שליליות והמחזור עדיין לא מופיע, מומלץ לפנות לבדיקה.`
+      );
+    }
+
+    if (preventing) {
+      return (
+        `${baseLine}\n` +
+        `מומלץ לשלול הריון באמצעות בדיקת הריון.\n` +
+        `אם הבדיקה שלילית, מומלץ לחזור על הבדיקה בעוד 48 שעות.\n` +
+        `אם האיחור נמשך למרות בדיקות שליליות, מומלץ לפנות לבדיקה.`
+      );
+    }
+
+    // מעקב כללי
+    return (
+      `${baseLine}\n` +
+      `מומלץ לשלול הריון באמצעות בדיקת הריון.\n` +
+      `אם האיחור מתמשך, מומלץ לפנות לבדיקה.`
+    );
+  }, [lateInfo.isLate, lateInfo.daysLate, forecast.nextPeriodStart, tryingToConceive, preventing]);
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
@@ -69,6 +124,13 @@ export default function DashboardScreen() {
         {forecast.nextPeriodStart && <Text style={styles.smallLine}>מחזור צפוי הבא: {formatDateIL(forecast.nextPeriodStart)}</Text>}
 
         <Text style={styles.goalLine}>{goalLabel}</Text>
+
+        {lateInfo.isLate && lateMessage && (
+          <View style={styles.lateBox}>
+            <Text style={styles.lateTitle}>המחזור מתעכב</Text>
+            <Text style={styles.lateText}>{lateMessage}</Text>
+          </View>
+        )}
 
         {tryingToConceive && (
           <View style={styles.ttcBox}>
@@ -91,9 +153,7 @@ export default function DashboardScreen() {
                 זוהתה בדיקת ביוץ חיובית. ברוב המקרים הביוץ מתרחש 12-24 שעות לאחר בדיקה חיובית.
               </Text>
             ) : (
-              <Text style={styles.ttcNote}>
-                לא זוהתה בדיקת ביוץ חיובית במחזור הנוכחי. החישוב מבוסס על אורך המחזור שהוגדר.
-              </Text>
+              <Text style={styles.ttcNote}>לא זוהתה בדיקת ביוץ חיובית במחזור הנוכחי. החישוב מבוסס על אורך המחזור שהוגדר.</Text>
             )}
           </View>
         )}
@@ -199,6 +259,33 @@ const styles = StyleSheet.create({
     color: '#6a1b9a',
     textAlign: 'center',
     writingDirection: 'rtl',
+  },
+
+  lateBox: {
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: '#ffe0b2',
+    backgroundColor: '#fff8e1',
+    borderRadius: 16,
+    padding: 12,
+  },
+
+  lateTitle: {
+    fontWeight: '900',
+    fontSize: 14,
+    marginBottom: 6,
+    writingDirection: 'rtl',
+    textAlign: 'right',
+    color: '#e65100',
+  },
+
+  lateText: {
+    fontSize: 12,
+    fontWeight: '700',
+    writingDirection: 'rtl',
+    textAlign: 'right',
+    color: '#5d4037',
+    lineHeight: 18,
   },
 
   ttcBox: {

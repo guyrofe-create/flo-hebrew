@@ -32,6 +32,12 @@ function diffDays(a: Date, b: Date) {
   return Math.round(ms / (24 * 60 * 60 * 1000));
 }
 
+function goalLabel(goal: string | null) {
+  if (goal === 'conceive') return 'כניסה להריון';
+  if (goal === 'prevent') return 'מניעה';
+  return 'מעקב כללי';
+}
+
 export default function SettingsScreen() {
   const router = useRouter();
 
@@ -44,6 +50,8 @@ export default function SettingsScreen() {
     symptomsByDay,
     advancedTracking,
     setAdvancedTracking,
+    goal,
+    setGoal,
   } = useUserData();
 
   const [dailyEnabled, setDailyEnabled] = useState<boolean>(false);
@@ -79,6 +87,8 @@ export default function SettingsScreen() {
 
     return cycleLength;
   }, [periodHistory, periodStart, cycleLength, periodLength, symptomsByDay]);
+
+  const forcedAdvanced = useMemo(() => goal === 'conceive' || goal === 'prevent', [goal]);
 
   useEffect(() => {
     (async () => {
@@ -199,26 +209,40 @@ export default function SettingsScreen() {
     Alert.alert('DEBUG - Scheduled Notifications', txt);
   };
 
+  const onChangeGoal = () => {
+    Alert.alert('שינוי מטרה', 'בחרי מטרה חדשה. אפשר לשנות בכל רגע לפי החיים האמיתיים.', [
+      { text: 'ביטול', style: 'cancel' },
+      {
+        text: 'מעקב כללי',
+        onPress: () => void setGoal('track'),
+      },
+      {
+        text: 'מניעה',
+        onPress: () => void setGoal('prevent'),
+      },
+      {
+        text: 'כניסה להריון',
+        onPress: () => void setGoal('conceive'),
+      },
+    ]);
+  };
+
   const handleResetConfirmed = async () => {
     try {
       setShowPicker(false);
 
-      // לבטל התראות ולהוריד דגלים שמורים לפני איפוס, כדי שלא יישאר משהו "מופעל"
       await Promise.all([
         cancelDailyReminder(),
         cancelPredictedPeriodReminder(),
         setPredictedPeriodReminderEnabled(false),
       ]);
 
-      // איפוס נתונים (כולל דיסקליימר בתוך ה-Context)
       await resetUserData();
 
-      // רענון מצב מסך הגדרות
       setDailyEnabled(false);
       setPredEnabled(false);
       setPredScheduled(false);
 
-      // לצאת החוצה למסך הדיסקליימר (חשוב כדי לא להישאר בטאבים)
       router.replace('/disclaimer');
     } catch {
       Alert.alert('שגיאה', 'לא הצלחתי לאפס את הנתונים. נסה שוב.');
@@ -245,19 +269,49 @@ export default function SettingsScreen() {
       </Pressable>
 
       <View style={styles.card}>
+        <Text style={styles.cardTitle}>מטרה</Text>
+
+        <View style={styles.row}>
+          <View style={styles.rowTextWrap}>
+            <Text style={styles.rowTitle}>מטרה נוכחית</Text>
+            <Text style={styles.rowSub}>
+              {goalLabel(goal)}. אפשר לשנות בכל רגע - למשל מעבר ממעקב למניעה או לכניסה להריון.
+            </Text>
+          </View>
+
+          <Pressable style={styles.smallBtn} onPress={onChangeGoal}>
+            <Text style={styles.smallBtnText}>שינוי</Text>
+          </Pressable>
+        </View>
+
+        <Text style={styles.cardNote}>
+          במטרות מניעה וכניסה להריון מעקב מתקדם מופעל אוטומטית. במעקב כללי אפשר לבחור להפעיל או לכבות.
+        </Text>
+      </View>
+
+      <View style={styles.card}>
         <Text style={styles.cardTitle}>מעקב</Text>
 
         <View style={styles.row}>
           <View style={styles.rowTextWrap}>
             <Text style={styles.rowTitle}>מעקב מתקדם</Text>
             <Text style={styles.rowSub}>מציג שדות נוספים ביומן: הפרשות, יחסים, בדיקות ביוץ, חום בסיסי (BBT).</Text>
+            {forcedAdvanced && (
+              <Text style={styles.lockHint}>
+                במטרה {goalLabel(goal)} מעקב מתקדם חייב להיות פעיל.
+              </Text>
+            )}
           </View>
 
-          <Switch value={advancedTracking} onValueChange={(v) => void setAdvancedTracking(v)} />
+          <Switch
+            value={advancedTracking}
+            onValueChange={(v) => void setAdvancedTracking(v)}
+            disabled={forcedAdvanced}
+          />
         </View>
 
         <Text style={styles.cardNote}>
-          אפשר לכבות בכל רגע. הנתונים שנשמרו נשארים, והחישובים עדיין מתחשבים בנתונים מתקדמים שכבר הוזנו. המתג משפיע בעיקר על תצוגת שדות נוספים.
+          אפשר לכבות בכל רגע (רק במעקב כללי). הנתונים שנשמרו נשארים, והחישובים עדיין מתחשבים בנתונים מתקדמים שכבר הוזנו.
         </Text>
       </View>
 
@@ -355,6 +409,22 @@ const styles = StyleSheet.create({
 
   btnText: { fontSize: 16, fontWeight: '900', color: '#6a1b9a', writingDirection: 'rtl' },
 
+  smallBtn: {
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e9ddff',
+    backgroundColor: '#fff',
+  },
+
+  smallBtnText: {
+    fontSize: 14,
+    fontWeight: '900',
+    color: '#6a1b9a',
+    writingDirection: 'rtl',
+  },
+
   dangerBtn: {
     borderColor: '#ffd0d9',
     backgroundColor: '#ffe3e8',
@@ -391,6 +461,15 @@ const styles = StyleSheet.create({
   rowTextWrap: { flex: 1 },
   rowTitle: { fontWeight: '900', fontSize: 15, color: '#111', writingDirection: 'rtl', textAlign: 'right' },
   rowSub: { marginTop: 4, fontSize: 12, color: '#666', fontWeight: '700', writingDirection: 'rtl', textAlign: 'right', lineHeight: 16 },
+
+  lockHint: {
+    marginTop: 6,
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#6a1b9a',
+    writingDirection: 'rtl',
+    textAlign: 'right',
+  },
 
   note: { marginTop: 14, fontSize: 12, color: '#666', textAlign: 'center', writingDirection: 'rtl' },
 });

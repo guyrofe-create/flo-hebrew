@@ -65,13 +65,19 @@ function Chart({ values, avg }: { values: number[]; avg: number | null }) {
         <Line x1={padL} y1={y24} x2={W - padR} y2={y24} stroke="#bbb" strokeWidth={1} strokeDasharray="4 4" />
         <Line x1={padL} y1={y38} x2={W - padR} y2={y38} stroke="#bbb" strokeWidth={1} strokeDasharray="4 4" />
 
-        <SvgText x={4} y={clamp(y24 + 4, 12, H - 8)} fontSize="10" fill="#666">24</SvgText>
-        <SvgText x={4} y={clamp(y38 + 4, 12, H - 8)} fontSize="10" fill="#666">38</SvgText>
+        <SvgText x={4} y={clamp(y24 + 4, 12, H - 8)} fontSize="10" fill="#666">
+          24
+        </SvgText>
+        <SvgText x={4} y={clamp(y38 + 4, 12, H - 8)} fontSize="10" fill="#666">
+          38
+        </SvgText>
 
         {yAvg !== null && (
           <>
             <Line x1={padL} y1={yAvg} x2={W - padR} y2={yAvg} stroke="#6a1b9a" strokeWidth={1} opacity={0.6} />
-            <SvgText x={W - 44} y={clamp(yAvg - 4, 12, H - 8)} fontSize="10" fill="#6a1b9a">ממוצע</SvgText>
+            <SvgText x={W - 44} y={clamp(yAvg - 4, 12, H - 8)} fontSize="10" fill="#6a1b9a">
+              ממוצע
+            </SvgText>
           </>
         )}
 
@@ -84,9 +90,7 @@ function Chart({ values, avg }: { values: number[]; avg: number | null }) {
         )}
       </Svg>
 
-      <Text style={styles.smallNote}>
-        תחום מקובל למחזור סדיר: 24 עד 38 ימים.
-      </Text>
+      <Text style={styles.smallNote}>תחום מקובל למחזור סדיר: 24 עד 38 ימים.</Text>
     </View>
   );
 }
@@ -110,16 +114,14 @@ export default function InsightsScreen() {
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
       <Text style={styles.title}>תובנות מחזור</Text>
-      <Text style={styles.subtitle}>אפשר לשנות בהמשך מההגדרות</Text>
+      <Text style={styles.subtitle}>אפשר לשנות מטרה בהגדרות בכל שלב</Text>
 
       <View style={styles.card}>
         <Text style={styles.cardTitle}>רמת נתונים</Text>
         <Text style={styles.statusText}>{dataLevelText}</Text>
 
         {regularityText && (
-          <Text style={[styles.statusText, insights.isIrregular ? styles.bad : styles.good]}>
-            {regularityText}
-          </Text>
+          <Text style={[styles.statusText, insights.isIrregular ? styles.bad : styles.good]}>{regularityText}</Text>
         )}
       </View>
 
@@ -131,10 +133,12 @@ export default function InsightsScreen() {
             <Text style={styles.kpiLabel}>מספר מחזורים</Text>
             <Text style={styles.kpiValue}>{insights.n}</Text>
           </View>
+
           <View style={styles.kpiBox}>
             <Text style={styles.kpiLabel}>ממוצע</Text>
             <Text style={styles.kpiValue}>{insights.avg !== null ? `${round1(insights.avg)}` : '-'}</Text>
           </View>
+
           <View style={styles.kpiBox}>
             <Text style={styles.kpiLabel}>סטיית תקן</Text>
             <Text style={styles.kpiValue}>{insights.stdDev !== null ? `${round1(insights.stdDev)}` : '-'}</Text>
@@ -146,9 +150,7 @@ export default function InsightsScreen() {
         <Chart values={values} avg={insights.avg} />
       </View>
 
-      <Text style={styles.disclaimer}>
-        ההערכות מבוססות על דפוס מחזורי לאורך זמן ואינן תחליף לייעוץ רפואי
-      </Text>
+      <Text style={styles.disclaimer}>ההערכות מבוססות על דפוס מחזורי לאורך זמן ואינן תחליף לייעוץ רפואי</Text>
     </ScrollView>
   );
 }
@@ -166,7 +168,15 @@ const styles = StyleSheet.create({
   statusText: { fontSize: 14, fontWeight: '800', writingDirection: 'rtl', textAlign: 'right', marginBottom: 6 },
 
   kpiRow: { flexDirection: 'row-reverse', gap: 10, marginBottom: 10 },
-  kpiBox: { flex: 1, borderWidth: 1, borderColor: '#eee', borderRadius: 14, paddingVertical: 10, paddingHorizontal: 10, backgroundColor: '#fafafa' },
+  kpiBox: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#eee',
+    borderRadius: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    backgroundColor: '#fafafa',
+  },
   kpiLabel: { fontSize: 12, color: '#666', fontWeight: '800', writingDirection: 'rtl', textAlign: 'right' },
   kpiValue: { marginTop: 4, fontSize: 14, fontWeight: '900', color: '#111', writingDirection: 'rtl', textAlign: 'right' },
 
@@ -174,7 +184,15 @@ const styles = StyleSheet.create({
   bad: { color: '#b00020' },
 
   chartWrap: {},
-  smallNote: { marginTop: 8, fontSize: 12, color: '#666', fontWeight: '700', writingDirection: 'rtl', textAlign: 'right', lineHeight: 16 },
+  smallNote: {
+    marginTop: 8,
+    fontSize: 12,
+    color: '#666',
+    fontWeight: '700',
+    writingDirection: 'rtl',
+    textAlign: 'right',
+    lineHeight: 16,
+  },
 
   disclaimer: { marginTop: 14, fontSize: 12, color: '#666', textAlign: 'center', writingDirection: 'rtl', fontWeight: '700' },
 });

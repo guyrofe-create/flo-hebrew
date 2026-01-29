@@ -1,3 +1,4 @@
+// context/UserDataContext.tsx
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, ReactNode, useContext, useEffect, useMemo, useState } from 'react';
 
@@ -40,8 +41,6 @@ export type UserData = {
   setBirthday: (date: string | null) => Promise<void>;
   setPeriodLength: (days: number) => Promise<void>;
 
-  // הוספה: תאימות לאונבורדינג שמצפה ל setCycleLength
-  // בפועל זה מגדיר את cycleLengthManual
   setCycleLength: (days: number) => Promise<void>;
 
   setCycleLengthManual: (days: number) => Promise<void>;
@@ -169,7 +168,6 @@ export function UserDataProvider({ children }: { children: ReactNode }) {
 
         if (map[STORAGE_KEY_DISCLAIMER_ACCEPTED]) setDisclaimerAccepted(map[STORAGE_KEY_DISCLAIMER_ACCEPTED] === 'true');
 
-        // כלל חדש: אם המטרה היא כניסה להריון או מניעה, מעקב מתקדם חייב להיות דלוק
         if (shouldForceAdvancedTracking(loadedGoal)) {
           setAdvancedTrackingState(true);
           if (!loadedAdv) {
@@ -191,7 +189,6 @@ export function UserDataProvider({ children }: { children: ReactNode }) {
   };
 
   const setAdvancedTracking = async (v: boolean) => {
-    // אם המטרה מחייבת מעקב מתקדם, לא מאפשרים לכבות
     if (shouldForceAdvancedTracking(goal) && !v) {
       setAdvancedTrackingState(true);
       await AsyncStorage.setItem(STORAGE_KEY_ADVANCED_TRACKING, 'true');
@@ -216,8 +213,7 @@ export function UserDataProvider({ children }: { children: ReactNode }) {
     setGoalState(g);
     await AsyncStorage.setItem(STORAGE_KEY_GOAL, g);
 
-    // כלל חדש: במטרות "כניסה להריון" ו"מניעה" מעקב מתקדם נדלק אוטומטית וננעל לדלוק
-    if (g === 'conceive' || g === 'prevent') {
+    if (shouldForceAdvancedTracking(g)) {
       setAdvancedTrackingState(true);
       await AsyncStorage.setItem(STORAGE_KEY_ADVANCED_TRACKING, 'true');
     }
@@ -245,7 +241,6 @@ export function UserDataProvider({ children }: { children: ReactNode }) {
     await AsyncStorage.setItem(STORAGE_KEY_CYCLE_LENGTH_MANUAL, String(v));
   };
 
-  // הוספה: alias כדי שקוד ישן/אונבורדינג שמחפש setCycleLength יעבוד
   const setCycleLength = async (days: number) => {
     await setCycleLengthManual(days);
   };
@@ -381,7 +376,6 @@ export function UserDataProvider({ children }: { children: ReactNode }) {
         setPeriodLength,
 
         setCycleLength,
-
         setCycleLengthManual,
 
         setPeriodStart,

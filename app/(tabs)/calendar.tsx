@@ -1,3 +1,4 @@
+// app/(tabs)/calendar.tsx
 import React, { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import DayModal from '../../components/DayModal';
@@ -65,19 +66,24 @@ export default function CalendarScreen() {
     return lastPeriodStart ? lastPeriodStart.toISOString() : null;
   }, [lastPeriodStart]);
 
+  // FIX: לכלול גם periodStart כדי שסימון "תחילת מחזור שהוזנה" יעבוד גם אם אין היסטוריה
   const periodSet = useMemo(() => {
-    return new Set(periodHistory);
-  }, [periodHistory]);
+    const items = [
+      ...(Array.isArray(periodHistory) ? periodHistory : []),
+      ...(periodStart ? [periodStart] : []),
+    ].filter(Boolean);
+    return new Set(items);
+  }, [periodHistory, periodStart]);
 
   const daysGrid = useMemo(() => {
-    const start = new Date(month);
+    const start = normalizeNoon(new Date(month));
     start.setDate(1);
 
     const firstWeekday = start.getDay();
-    const gridStart = addDays(start, -firstWeekday);
+    const gridStart = normalizeNoon(addDays(start, -firstWeekday));
 
     const cells: Date[] = [];
-    for (let i = 0; i < 42; i++) cells.push(addDays(gridStart, i));
+    for (let i = 0; i < 42; i++) cells.push(normalizeNoon(addDays(gridStart, i)));
     return cells;
   }, [month]);
 
@@ -88,12 +94,10 @@ export default function CalendarScreen() {
   const marks = useMemo(() => {
     const m = new Map<string, MarkType>();
 
-    // אם אין נתונים בסיסיים, לא מסמנים כלום
     if (!lastPeriodStart || !cycleLength || cycleLength <= 0) return m;
 
     const ovuIndexBase = Math.max(0, cycleLength - 14);
 
-    // סימון בסיס לפי אורך מחזור
     for (const d of daysGrid) {
       const delta = daysBetween(d, lastPeriodStart);
       const mod = ((delta % cycleLength) + cycleLength) % cycleLength;
@@ -105,7 +109,6 @@ export default function CalendarScreen() {
         continue;
       }
 
-      // פוריות וביוץ מוצגים רק אם זה רלוונטי ליעד (כניסה להריון או מעקב כללי)
       const shouldShowFertility = goal !== 'prevent';
 
       if (shouldShowFertility) {
@@ -123,9 +126,7 @@ export default function CalendarScreen() {
       m.set(key, null);
     }
 
-    // תיקון לפי ביוץ חיובי במחזור הנוכחי (מקור אמת)
     if (goal !== 'prevent' && latestPositiveOvulation) {
-      // ננקה רק סימונים "פוריות" ו"ביוץ" מהבסיס, לא נוגעים במחזור
       for (const d of daysGrid) {
         const k = formatKey(d);
         const curr = m.get(k);
@@ -223,7 +224,9 @@ export default function CalendarScreen() {
       {tryingToConceive && (
         <View style={styles.ttcBanner}>
           <Text style={styles.ttcBannerTitle}>מנסה להיכנס להריון</Text>
-          <Text style={styles.ttcBannerText}>חלון הפוריות והביוץ מסומנים בלוח. אם תסמני בדיקת ביוץ חיובית, הסימון יתעדכן סביב היום שסומן.</Text>
+          <Text style={styles.ttcBannerText}>
+            חלון הפוריות והביוץ מסומנים בלוח. אם תסמני בדיקת ביוץ חיובית, הסימון יתעדכן סביב היום שסומן.
+          </Text>
         </View>
       )}
 
