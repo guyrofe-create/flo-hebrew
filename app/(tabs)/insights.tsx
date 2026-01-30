@@ -1,11 +1,12 @@
 // app/(tabs)/insights.tsx
 import React, { useMemo } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Svg, { Line, Polyline, Rect, Text as SvgText } from 'react-native-svg';
 
 import { useUserData } from '../../context/UserDataContext';
 import { computeClinicalInsights, type ClinicalFlag } from '../../lib/clinicalInsights';
 import { computeCycleInsights } from '../../lib/cycleInsights';
+import { getEducationUrl, type EducationTopic } from '../../lib/educationLinks';
 
 function round1(n: number) {
   return Math.round(n * 10) / 10;
@@ -42,6 +43,53 @@ function confidenceLabel(c: string) {
     default:
       return 'אין';
   }
+}
+
+async function openExternal(url: string) {
+  try {
+    const can = await Linking.canOpenURL(url);
+    if (!can) return;
+    await Linking.openURL(url);
+  } catch {
+    // ignore
+  }
+}
+
+function LinkButton({ label, topic }: { label: string; topic: EducationTopic }) {
+  return (
+    <Pressable
+      onPress={() => openExternal(getEducationUrl(topic))}
+      style={({ pressed }) => [styles.linkBtn, pressed ? styles.linkBtnPressed : null]}
+      accessibilityRole="button"
+    >
+      <Text style={styles.linkBtnText}>{label}</Text>
+    </Pressable>
+  );
+}
+
+function clinicalTopicForFlag(f: ClinicalFlag): EducationTopic {
+  switch (f.type) {
+    case 'short_cycles':
+    case 'long_cycles':
+      return 'cycle_irregular';
+    case 'prolonged_bleeding':
+    case 'bleeding_longer_than_config':
+      return 'prolonged_bleeding';
+    case 'intermenstrual_bleeding':
+      return 'heavy_bleeding';
+    case 'no_period':
+      return 'late_period';
+    default:
+      return 'cycle_irregular';
+  }
+}
+
+function modeTopicFromPhysioMode(physioMode: string): EducationTopic | null {
+  if (physioMode === 'postpartum') return 'postpartum';
+  if (physioMode === 'breastfeeding') return 'breastfeeding';
+  if (physioMode === 'stoppingPills') return 'post_ocp';
+  if (physioMode === 'perimenopause') return 'cycle_irregular';
+  return null;
 }
 
 function Chart({ values, avg }: { values: number[]; avg: number | null }) {
@@ -178,6 +226,8 @@ export default function InsightsScreen() {
     return `רמת ביטחון בתחזיות: ${confidenceLabel(insights.predictionConfidence)}`;
   }, [insights.predictionConfidence]);
 
+  const modeTopic = useMemo(() => modeTopicFromPhysioMode(physioMode), [physioMode]);
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
       <Text style={styles.title}>תובנות מחזור</Text>
@@ -191,8 +241,14 @@ export default function InsightsScreen() {
 
         {insights.modeNote && <Text style={styles.modeNote}>{insights.modeNote}</Text>}
 
+        {modeTopic && <LinkButton label="קראי עוד על המצב הזה" topic={modeTopic} />}
+
         {regularityText && (
           <Text style={[styles.statusText, insights.isIrregular ? styles.bad : styles.good]}>{regularityText}</Text>
+        )}
+
+        {!insights.suppressIrregularFlag && insights.n >= 3 && (
+          <LinkButton label="קראי עוד על מחזורים לא סדירים" topic="cycle_irregular" />
         )}
       </View>
 
@@ -204,6 +260,7 @@ export default function InsightsScreen() {
             <View key={`${f.type}-${idx}`} style={styles.flagRow}>
               <Text style={styles.flagTitle}>{f.title}</Text>
               <Text style={styles.line}>{f.message}</Text>
+              <LinkButton label="קראי עוד" topic={clinicalTopicForFlag(f)} />
             </View>
           ))}
 
@@ -230,6 +287,8 @@ export default function InsightsScreen() {
             <Text style={styles.kpiValue}>{insights.stdDev !== null ? `${round1(insights.stdDev)}` : '-'}</Text>
           </View>
         </View>
+
+        <LinkButton label="מה נחשב מחזור תקין" topic="cycle_regular" />
       </View>
 
       <View style={styles.card}>
@@ -287,4 +346,17 @@ const styles = StyleSheet.create({
   line: { fontSize: 13, fontWeight: '800', color: '#333', writingDirection: 'rtl', textAlign: 'right', marginBottom: 6 },
 
   disclaimer: { marginTop: 14, fontSize: 12, color: '#666', textAlign: 'center', writingDirection: 'rtl', fontWeight: '700' },
+
+  linkBtn: {
+    alignSelf: 'flex-end',
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 999,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: '#fff',
+  },
+  linkBtnPressed: { opacity: 0.75 },
+  linkBtnText: { fontSize: 12, fontWeight: '900', color: '#6a1b9a', writingDirection: 'rtl', textAlign: 'right' },
 });
