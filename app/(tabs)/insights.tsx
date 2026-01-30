@@ -7,22 +7,6 @@ import { useUserData } from '../../context/UserDataContext';
 import { computeClinicalInsights, type ClinicalFlag } from '../../lib/clinicalInsights';
 import { computeCycleInsights } from '../../lib/cycleInsights';
 
-type NormalizedPhysioMode = 'regular' | 'postpartum' | 'breastfeeding' | 'perimenopause' | 'postOCP';
-
-function normalizePhysioMode(mode: any): NormalizedPhysioMode {
-  if (mode === 'regular') return 'regular';
-  if (mode === 'none') return 'regular';
-
-  if (mode === 'postOCP') return 'postOCP';
-  if (mode === 'stoppingPills') return 'postOCP';
-
-  if (mode === 'postpartum') return 'postpartum';
-  if (mode === 'breastfeeding') return 'breastfeeding';
-  if (mode === 'perimenopause') return 'perimenopause';
-
-  return 'regular';
-}
-
 function round1(n: number) {
   return Math.round(n * 10) / 10;
 }
@@ -95,13 +79,7 @@ function Chart({ values, avg }: { values: number[]; avg: number | null }) {
       <Text style={styles.cardTitle}>גרף אורכי מחזור</Text>
 
       <Svg width={W} height={H}>
-        <Rect
-          x={padL}
-          y={Math.min(y24, y38)}
-          width={W - padL - padR}
-          height={Math.abs(y24 - y38)}
-          opacity={0.08}
-        />
+        <Rect x={padL} y={Math.min(y24, y38)} width={W - padL - padR} height={Math.abs(y24 - y38)} opacity={0.08} />
 
         <Line x1={padL} y1={padT} x2={padL} y2={H - padB} stroke="#999" strokeWidth={1} />
         <Line x1={padL} y1={H - padB} x2={W - padR} y2={H - padB} stroke="#999" strokeWidth={1} />
@@ -140,10 +118,9 @@ function Chart({ values, avg }: { values: number[]; avg: number | null }) {
 }
 
 export default function InsightsScreen() {
-  const { periodHistory, periodStart, periodLength, birthday, physioMode } = useUserData();
+  const { periodHistory, periodStart, periodLength, birthday, physioMode, symptomsByDay } = useUserData();
 
   const ageYears = useMemo(() => computeAgeYears(birthday), [birthday]);
-  const physioModeNorm = useMemo(() => normalizePhysioMode(physioMode), [physioMode]);
 
   const cycleDatesOldestToNewest = useMemo(() => {
     const items = [
@@ -155,9 +132,17 @@ export default function InsightsScreen() {
     return uniq.sort();
   }, [periodHistory, periodStart]);
 
+  const cycleMode = useMemo(() => {
+    if (physioMode === 'postpartum') return 'postpartum';
+    if (physioMode === 'breastfeeding') return 'breastfeeding';
+    if (physioMode === 'perimenopause') return 'perimenopause';
+    if (physioMode === 'stoppingPills') return 'stoppingPills';
+    return 'regular';
+  }, [physioMode]);
+
   const insights = useMemo(
-    () => computeCycleInsights(cycleDatesOldestToNewest, ageYears, physioModeNorm),
-    [cycleDatesOldestToNewest, ageYears, physioModeNorm]
+    () => computeCycleInsights(cycleDatesOldestToNewest, ageYears, cycleMode),
+    [cycleDatesOldestToNewest, ageYears, cycleMode]
   );
 
   const values = insights.points.map(p => p.lengthDays);
@@ -168,8 +153,10 @@ export default function InsightsScreen() {
       periodHistory: Array.isArray(periodHistory) ? periodHistory : [],
       periodStart: periodStart ?? null,
       periodLength,
+      symptomsByDay,
+      physioMode,
     });
-  }, [periodHistory, periodStart, periodLength]);
+  }, [periodHistory, periodStart, periodLength, symptomsByDay, physioMode]);
 
   const hasClinical = clinicalFlags.length > 0;
 
@@ -213,7 +200,7 @@ export default function InsightsScreen() {
         <View style={styles.card}>
           <Text style={styles.cardTitle}>תובנות רפואיות בסיסיות</Text>
 
-          {clinicalFlags.slice(0, 5).map((f, idx) => (
+          {clinicalFlags.slice(0, 6).map((f, idx) => (
             <View key={`${f.type}-${idx}`} style={styles.flagRow}>
               <Text style={styles.flagTitle}>{f.title}</Text>
               <Text style={styles.line}>{f.message}</Text>
