@@ -8,6 +8,12 @@ import { computeClinicalInsights, type ClinicalFlag } from '../../lib/clinicalIn
 import { computeCycleInsights } from '../../lib/cycleInsights';
 import { getEducationUrl, type EducationTopic } from '../../lib/educationLinks';
 
+const KNOWLEDGE_CENTER_URL =
+  'https://guyrofe.com/%d7%9e%d7%a8%d7%9b%d7%96-%d7%99%d7%93%d7%a2-%d7%91%d7%a8%d7%99%d7%90%d7%95%d7%aa-%d7%94%d7%90%d7%99%d7%a9%d7%94/';
+
+const SHORT_CYCLE_URL = 'https://www.guyrofe.com/מחזור-קצר-מהרגיל/';
+const LONG_CYCLE_URL = 'https://www.guyrofe.com/מחזור-ארוך-מהרגיל/';
+
 function round1(n: number) {
   return Math.round(n * 10) / 10;
 }
@@ -67,20 +73,42 @@ function LinkButton({ label, topic }: { label: string; topic: EducationTopic }) 
   );
 }
 
-function clinicalTopicForFlag(f: ClinicalFlag): EducationTopic {
+function ExternalLinkButton({ label, url }: { label: string; url: string }) {
+  return (
+    <Pressable
+      onPress={() => openExternal(url)}
+      style={({ pressed }) => [styles.linkBtn, pressed ? styles.linkBtnPressed : null]}
+      accessibilityRole="button"
+    >
+      <Text style={styles.linkBtnText}>{label}</Text>
+    </Pressable>
+  );
+}
+
+type ClinicalLink =
+  | { kind: 'topic'; topic: EducationTopic; label?: string }
+  | { kind: 'url'; url: string; label?: string };
+
+function clinicalLinkForFlag(f: ClinicalFlag): ClinicalLink {
   switch (f.type) {
     case 'short_cycles':
+      return { kind: 'url', url: SHORT_CYCLE_URL, label: 'קראי עוד על מחזור קצר' };
+
     case 'long_cycles':
-      return 'cycle_irregular';
+      return { kind: 'url', url: LONG_CYCLE_URL, label: 'קראי עוד על מחזור ארוך' };
+
     case 'prolonged_bleeding':
     case 'bleeding_longer_than_config':
-      return 'prolonged_bleeding';
+      return { kind: 'topic', topic: 'prolonged_bleeding', label: 'קראי עוד' };
+
     case 'intermenstrual_bleeding':
-      return 'heavy_bleeding';
+      return { kind: 'topic', topic: 'intermenstrual_bleeding', label: 'קראי עוד' };
+
     case 'no_period':
-      return 'late_period';
+      return { kind: 'topic', topic: 'late_period', label: 'קראי עוד' };
+
     default:
-      return 'cycle_irregular';
+      return { kind: 'topic', topic: 'cycle_irregular', label: 'קראי עוד' };
   }
 }
 
@@ -234,6 +262,12 @@ export default function InsightsScreen() {
       <Text style={styles.subtitle}>אפשר לשנות בהגדרות בכל שלב</Text>
 
       <View style={styles.card}>
+        <Text style={styles.cardTitle}>מרכז ידע</Text>
+        <Text style={styles.statusText}>רוצה לקרוא עוד בצורה מסודרת?</Text>
+        <ExternalLinkButton label="למרכז הידע לבריאות האישה" url={KNOWLEDGE_CENTER_URL} />
+      </View>
+
+      <View style={styles.card}>
         <Text style={styles.cardTitle}>רמת נתונים</Text>
         <Text style={styles.statusText}>{dataLevelText}</Text>
 
@@ -256,13 +290,22 @@ export default function InsightsScreen() {
         <View style={styles.card}>
           <Text style={styles.cardTitle}>תובנות רפואיות בסיסיות</Text>
 
-          {clinicalFlags.slice(0, 6).map((f, idx) => (
-            <View key={`${f.type}-${idx}`} style={styles.flagRow}>
-              <Text style={styles.flagTitle}>{f.title}</Text>
-              <Text style={styles.line}>{f.message}</Text>
-              <LinkButton label="קראי עוד" topic={clinicalTopicForFlag(f)} />
-            </View>
-          ))}
+          {clinicalFlags.slice(0, 6).map((f, idx) => {
+            const link = clinicalLinkForFlag(f);
+
+            return (
+              <View key={`${f.type}-${idx}`} style={styles.flagRow}>
+                <Text style={styles.flagTitle}>{f.title}</Text>
+                <Text style={styles.line}>{f.message}</Text>
+
+                {link.kind === 'topic' ? (
+                  <LinkButton label={link.label ?? 'קראי עוד'} topic={link.topic} />
+                ) : (
+                  <ExternalLinkButton label={link.label ?? 'קראי עוד'} url={link.url} />
+                )}
+              </View>
+            );
+          })}
 
           <Text style={styles.smallNote}>אם נראה שיש דפוס שחוזר, מומלץ לשקול מעקב רפואי לפי הצורך.</Text>
         </View>
@@ -305,7 +348,14 @@ const styles = StyleSheet.create({
   content: { paddingTop: 16, paddingBottom: 28 },
 
   title: { fontSize: 22, fontWeight: '900', textAlign: 'center', writingDirection: 'rtl' },
-  subtitle: { marginTop: 6, fontSize: 13, color: '#666', fontWeight: '700', textAlign: 'center', writingDirection: 'rtl' },
+  subtitle: {
+    marginTop: 6,
+    fontSize: 13,
+    color: '#666',
+    fontWeight: '700',
+    textAlign: 'center',
+    writingDirection: 'rtl',
+  },
 
   card: { borderWidth: 1, borderColor: '#eee', borderRadius: 18, padding: 14, marginTop: 12, backgroundColor: '#fff' },
   cardTitle: { fontWeight: '900', fontSize: 16, marginBottom: 10, writingDirection: 'rtl', textAlign: 'right', color: '#111' },
@@ -339,7 +389,15 @@ const styles = StyleSheet.create({
   bad: { color: '#b00020' },
 
   chartWrap: {},
-  smallNote: { marginTop: 8, fontSize: 12, color: '#666', fontWeight: '700', writingDirection: 'rtl', textAlign: 'right', lineHeight: 16 },
+  smallNote: {
+    marginTop: 8,
+    fontSize: 12,
+    color: '#666',
+    fontWeight: '700',
+    writingDirection: 'rtl',
+    textAlign: 'right',
+    lineHeight: 16,
+  },
 
   flagRow: { marginBottom: 10 },
   flagTitle: { fontSize: 14, fontWeight: '900', color: '#111', writingDirection: 'rtl', textAlign: 'right', marginBottom: 4 },
