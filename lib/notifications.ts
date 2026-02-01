@@ -1,3 +1,4 @@
+// lib/notifications.ts
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
 import { addDays, normalizeNoon } from './date';
@@ -207,17 +208,14 @@ export async function schedulePredictedPeriodReminderForNextPeriodStart(nextPeri
   const { hour, minute } = await getDailyReminderTime();
   const now = new Date();
 
-  // ברירת מחדל: יום לפני המחזור הצפוי, בשעה השמורה
   let reminderDay = addDays(nextStart, -1);
   let triggerDate = buildTriggerDate(reminderDay, hour, minute);
 
-  // אם כבר עבר, ננסה באותו יום של המחזור הצפוי בשעה השמורה
   if (triggerDate.getTime() <= now.getTime() + 60_000) {
     reminderDay = addDays(nextStart, 0);
     triggerDate = buildTriggerDate(reminderDay, hour, minute);
   }
 
-  // אם גם זה עבר, נזיז למחר בשעה השמורה
   if (triggerDate.getTime() <= now.getTime() + 60_000) {
     const tomorrow = addDays(normalizeNoon(new Date()), 1);
     triggerDate = buildTriggerDate(tomorrow, hour, minute);
@@ -239,8 +237,7 @@ export async function schedulePredictedPeriodReminderForNextPeriodStart(nextPeri
 }
 
 /**
- * ישן: נשאר לתאימות לאחור, אם עוד יש מקומות שקוראים לו.
- * מומלץ שבסוף לא נשתמש בו, אלא ב schedulePredictedPeriodReminderForNextPeriodStart.
+ * ישן: נשאר לתאימות לאחור.
  */
 export async function schedulePredictedPeriodReminder(lastPeriodStartIso: string, cycleLength: number): Promise<void> {
   await cancelPredictedPeriodReminder();
@@ -316,36 +313,4 @@ export async function isPredictedPeriodReminderScheduled(): Promise<boolean> {
   if (storedId) return all.some(n => n.identifier === storedId);
 
   return all.some(n => n?.content?.title === 'מחזור צפוי בקרוב');
-}
-
-export async function debugScheduledNotificationsText(): Promise<string> {
-  const all = await Notifications.getAllScheduledNotificationsAsync();
-  if (!all || all.length === 0) return 'אין התראות מתוזמנות כרגע.';
-
-  const storedDailyId = await getStoredReminderId();
-  const storedTime = await AsyncStorage.getItem(STORAGE_KEY_DAILY_REMINDER_TIME);
-
-  const storedPredId = await getStoredPredictedPeriodId();
-  const predEnabled = await getPredictedPeriodReminderEnabled();
-
-  const lines: string[] = [];
-  lines.push(`סה"כ מתוזמנות: ${all.length}`);
-  lines.push(`Daily ID: ${storedDailyId || 'אין'}`);
-  lines.push(`שעה שמורה: ${storedTime || 'אין'}`);
-  lines.push(`Predicted enabled: ${predEnabled ? 'true' : 'false'}`);
-  lines.push(`Predicted ID: ${storedPredId || 'אין'}`);
-
-  for (const n of all) {
-    const id = n.identifier || '(ללא מזהה)';
-    const trig: any = n.trigger;
-
-    const hh = typeof trig?.hour === 'number' ? String(trig.hour).padStart(2, '0') : '--';
-    const mm = typeof trig?.minute === 'number' ? String(trig.minute).padStart(2, '0') : '--';
-
-    const type = trig?.type ? String(trig.type) : 'unknown';
-    const title = n?.content?.title || '';
-    lines.push(`• ${id} | type=${type} | שעה=${hh}:${mm} | title=${title}`);
-  }
-
-  return lines.join('\n');
 }

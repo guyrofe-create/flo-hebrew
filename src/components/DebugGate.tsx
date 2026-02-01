@@ -1,3 +1,4 @@
+// src/components/DebugGate.tsx
 import React from 'react';
 import { isDebugUIEnabled } from '../lib/debug';
 

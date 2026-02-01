@@ -88,6 +88,7 @@ export default function SettingsScreen() {
 
   const forcedAdvanced = useMemo(() => goal === 'conceive' || goal === 'prevent', [goal]);
 
+  // טוען סטטוס התראות בפעם הראשונה
   useEffect(() => {
     (async () => {
       const [scheduled, t, pe, ps] = await Promise.all([
@@ -103,6 +104,13 @@ export default function SettingsScreen() {
       setPredScheduled(ps);
     })();
   }, []);
+
+  // אם המטרה מחייבת מעקב מתקדם, ודא שזה דלוק
+  useEffect(() => {
+    if (forcedAdvanced && !advancedTracking) {
+      void setAdvancedTracking(true);
+    }
+  }, [forcedAdvanced, advancedTracking, setAdvancedTracking]);
 
   const reschedulePredictedIfNeeded = async () => {
     const enabled = await getPredictedPeriodReminderEnabled();
@@ -201,25 +209,12 @@ export default function SettingsScreen() {
     Alert.alert('בוטל', 'תזכורת למחזור צפוי בוטלה.');
   };
 
-  const runDebug = async () => {
-    Alert.alert('DEBUG - Scheduled Notifications', txt);
-  };
-
   const onChangeGoal = () => {
     Alert.alert('שינוי מטרה', 'בחרי מטרה חדשה. אפשר לשנות בכל רגע לפי החיים האמיתיים.', [
       { text: 'ביטול', style: 'cancel' },
-      {
-        text: 'מעקב כללי',
-        onPress: () => void setGoal('track'),
-      },
-      {
-        text: 'מניעה',
-        onPress: () => void setGoal('prevent'),
-      },
-      {
-        text: 'כניסה להריון',
-        onPress: () => void setGoal('conceive'),
-      },
+      { text: 'מעקב כללי', onPress: () => void setGoal('track') },
+      { text: 'מניעה', onPress: () => void setGoal('prevent') },
+      { text: 'כניסה להריון', onPress: () => void setGoal('conceive') },
     ]);
   };
 
@@ -227,7 +222,11 @@ export default function SettingsScreen() {
     try {
       setShowPicker(false);
 
-      await Promise.all([cancelDailyReminder(), cancelPredictedPeriodReminder(), setPredictedPeriodReminderEnabled(false)]);
+      await Promise.all([
+        cancelDailyReminder(),
+        cancelPredictedPeriodReminder(),
+        setPredictedPeriodReminderEnabled(false),
+      ]);
 
       await resetUserData();
 
@@ -244,11 +243,7 @@ export default function SettingsScreen() {
   const onReset = () => {
     Alert.alert('איפוס נתונים', 'למחוק את כל הנתונים מהאפליקציה?', [
       { text: 'ביטול', style: 'cancel' },
-      {
-        text: 'מחק הכל',
-        style: 'destructive',
-        onPress: () => void handleResetConfirmed(),
-      },
+      { text: 'מחק הכל', style: 'destructive', onPress: () => void handleResetConfirmed() },
     ]);
   };
 
@@ -266,7 +261,9 @@ export default function SettingsScreen() {
         <View style={styles.row}>
           <View style={styles.rowTextWrap}>
             <Text style={styles.rowTitle}>מטרה נוכחית</Text>
-            <Text style={styles.rowSub}>{goalLabel(goal)}. אפשר לשנות בכל רגע - למשל מעבר ממעקב למניעה או לכניסה להריון.</Text>
+            <Text style={styles.rowSub}>
+              {goalLabel(goal)}. אפשר לשנות בכל רגע, למשל מעבר ממעקב למניעה או לכניסה להריון.
+            </Text>
           </View>
 
           <Pressable style={styles.smallBtn} onPress={onChangeGoal}>
@@ -286,7 +283,9 @@ export default function SettingsScreen() {
           <View style={styles.rowTextWrap}>
             <Text style={styles.rowTitle}>מעקב מתקדם</Text>
             <Text style={styles.rowSub}>מציג שדות נוספים ביומן: הפרשות, יחסים, בדיקות ביוץ, חום בסיסי (BBT).</Text>
-            {forcedAdvanced && <Text style={styles.lockHint}>במטרה {goalLabel(goal)} מעקב מתקדם חייב להיות פעיל.</Text>}
+            {forcedAdvanced ? (
+              <Text style={styles.lockHint}>במטרה {goalLabel(goal)} מעקב מתקדם חייב להיות פעיל.</Text>
+            ) : null}
           </View>
 
           <Switch value={advancedTracking} onValueChange={v => void setAdvancedTracking(v)} disabled={forcedAdvanced} />
@@ -313,7 +312,7 @@ export default function SettingsScreen() {
           <Text style={styles.btnText}>שעה: {timeLabel}</Text>
         </Pressable>
 
-        {showPicker && (
+        {showPicker ? (
           <View style={{ marginTop: 10 }}>
             <DateTimePicker
               value={new Date(2000, 0, 1, dailyTime.hour, dailyTime.minute, 0, 0)}
@@ -323,13 +322,13 @@ export default function SettingsScreen() {
               onChange={(_, d) => void onPickTime(d ?? undefined)}
             />
 
-            {Platform.OS === 'ios' && (
+            {Platform.OS === 'ios' ? (
               <Pressable style={[styles.btn, { marginTop: 10 }]} onPress={() => setShowPicker(false)}>
                 <Text style={styles.btnText}>סגור</Text>
               </Pressable>
-            )}
+            ) : null}
           </View>
-        )}
+        ) : null}
 
         <View style={[styles.row, { marginTop: 12 }]}>
           <View style={styles.rowTextWrap}>
@@ -342,6 +341,72 @@ export default function SettingsScreen() {
           <Switch value={predEnabled} onValueChange={() => void togglePredicted()} />
         </View>
 
-        <Text style={styles.cardNote}>מצב מתוזמן: {predEnabled ? (predScheduled ? 'כן' : 'מופעל אבל לא מתוזמן') : 'כבוי'}</Text>
+        <Text style={styles.cardNote}>
+          מצב מתוזמן: {predEnabled ? (predScheduled ? 'כן' : 'מופעל אבל לא מתוזמן') : 'כבוי'}
+        </Text>
+      </View>
 
-        ;
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>איפוס</Text>
+        <Text style={styles.cardNote}>
+          מוחק את כל הנתונים שנשמרו באפליקציה ומחזיר לאונבורדינג. פעולה זו לא ניתנת לשחזור.
+        </Text>
+
+        <Pressable style={[styles.btn, styles.dangerBtn]} onPress={onReset}>
+          <Text style={[styles.btnText, styles.dangerBtnText]}>מחק הכל</Text>
+        </Pressable>
+      </View>
+
+      <View style={{ height: 24 }} />
+    </ScrollView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#fff' },
+  content: { padding: 16, paddingBottom: 28 },
+
+  title: { fontSize: 24, fontWeight: '700', textAlign: 'right', marginBottom: 12 },
+
+  btn: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    marginBottom: 12,
+    backgroundColor: '#fff',
+  },
+  btnText: { textAlign: 'right', fontSize: 16, fontWeight: '600' },
+
+  card: {
+    borderWidth: 1,
+    borderColor: '#eee',
+    borderRadius: 14,
+    padding: 14,
+    backgroundColor: '#fff',
+    marginBottom: 12,
+  },
+  cardTitle: { textAlign: 'right', fontSize: 18, fontWeight: '700', marginBottom: 10 },
+  cardNote: { textAlign: 'right', fontSize: 14, lineHeight: 20, color: '#333', marginTop: 10 },
+
+  row: { flexDirection: 'row-reverse', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  rowTextWrap: { flex: 1 },
+  rowTitle: { textAlign: 'right', fontSize: 16, fontWeight: '700' },
+  rowSub: { textAlign: 'right', fontSize: 13.5, lineHeight: 19, color: '#444', marginTop: 4 },
+
+  smallBtn: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    backgroundColor: '#fff',
+  },
+  smallBtnText: { fontSize: 14, fontWeight: '700' },
+
+  lockHint: { textAlign: 'right', marginTop: 6, fontSize: 13, color: '#0a7a3a', fontWeight: '600' },
+
+  dangerBtn: { borderColor: '#ffb3b3', backgroundColor: '#fff5f5' },
+  dangerBtnText: { color: '#b00020' },
+});
