@@ -1,6 +1,6 @@
 // lib/educationLinks.ts
 
-export const HOME_URL = 'https://www.guyrofe.com';
+export const HOME_URL = 'https://guyrofe.com';
 
 export type EducationTopic =
   | 'cycle_regular'
@@ -13,23 +13,43 @@ export type EducationTopic =
   | 'endometriosis'
   | 'postpartum'
   | 'breastfeeding'
-  | 'post_ocp';
+  | 'post_ocp'
+  | 'late_or_irregular_ovulation'
+  | 'perimenopause_cycle_changes'
+  | 'long_cycle'
+  | 'short_cycle';
 
 export const EDUCATION_SLUGS: Record<EducationTopic, string> = {
-  cycle_regular: '/מחזור-סדיר-מה-נחשב-תקין',
-  cycle_irregular: '/מחזורים-לא-סדירים', // עמוד מרכז שצריך להתקיים
-  late_period: '/איחור-במחזור',
-  prolonged_bleeding: '/דימום-ממושך',
-  heavy_bleeding: '/דימום-כבד-במחזור',
-  intermenstrual_bleeding: '/דימום-בין-מחזורים',
-  period_pain: '/כאבים-חזקים-בזמן-מחזור',
+  // מחזור תקין
+  cycle_regular: '/מחזור-סדיר-מה-נחשב-תקין/',
+
+  // מחזורים לא סדירים -> שחלות פוליציסטיות (כפי שביקשת)
+  cycle_irregular: '/שחלות-פוליציסטיות-מחזור-לא-סדיר/',
+
+  // איחור
+  late_period: '/איחור-במחזור/',
+
+  // דימומים
+  prolonged_bleeding: '/דימום-ממושך/',
+  heavy_bleeding: '/דימום-כבד-במחזור/',
+  intermenstrual_bleeding: '/דימום-בין-מחזורים/',
+
+  // כאבים
+  period_pain: '/כאבים-חזקים-בזמן-מחזור/',
 
   // עד שיהיה עמוד ייעודי לאנדומטריוזיס
-  endometriosis: '/כאבים-חזקים-בזמן-מחזור',
+  endometriosis: '/כאבים-חזקים-בזמן-מחזור/',
 
-  postpartum: '/אחרי-לידה-מתי-חוזר-המחזור',
-  breastfeeding: '/הנקה-ביוץ-ומחזור',
-  post_ocp: '/הפסקת-גלולות-מתי-המחזור-חוזר',
+  // מצבים פיזיולוגיים
+  postpartum: '/אחרי-לידה-מתי-חוזר-המחזור/',
+  breastfeeding: '/הנקה-ביוץ-ומחזור/',
+  post_ocp: '/הפסקת-גלולות-מתי-המחזור-חוזר/',
+
+  // קישורים נוספים שביקשת שיהיה להם ביטוי
+  late_or_irregular_ovulation: '/ביוץ-מאוחר-או-לא-סדיר/',
+  perimenopause_cycle_changes: '/גיל-המעבר-שינויים-במחזור/',
+  long_cycle: '/מחזור-ארוך-מהרגיל/',
+  short_cycle: '/מחזור-קצר-מהרגיל/',
 };
 
 export function getEducationUrl(topic: EducationTopic) {

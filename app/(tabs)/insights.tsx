@@ -11,9 +11,6 @@ import { getEducationUrl, type EducationTopic } from '../../lib/educationLinks';
 const KNOWLEDGE_CENTER_URL =
   'https://guyrofe.com/%d7%9e%d7%a8%d7%9b%d7%96-%d7%99%d7%93%d7%a2-%d7%91%d7%a8%d7%99%d7%90%d7%95%d7%aa-%d7%94%d7%90%d7%99%d7%a9%d7%94/';
 
-const SHORT_CYCLE_URL = 'https://www.guyrofe.com/מחזור-קצר-מהרגיל/';
-const LONG_CYCLE_URL = 'https://www.guyrofe.com/מחזור-ארוך-מהרגיל/';
-
 function round1(n: number) {
   return Math.round(n * 10) / 10;
 }
@@ -85,17 +82,15 @@ function ExternalLinkButton({ label, url }: { label: string; url: string }) {
   );
 }
 
-type ClinicalLink =
-  | { kind: 'topic'; topic: EducationTopic; label?: string }
-  | { kind: 'url'; url: string; label?: string };
+type ClinicalLink = { kind: 'topic'; topic: EducationTopic; label?: string };
 
 function clinicalLinkForFlag(f: ClinicalFlag): ClinicalLink {
   switch (f.type) {
     case 'short_cycles':
-      return { kind: 'url', url: SHORT_CYCLE_URL, label: 'קראי עוד על מחזור קצר' };
+      return { kind: 'topic', topic: 'short_cycle', label: 'קראי עוד על מחזור קצר' };
 
     case 'long_cycles':
-      return { kind: 'url', url: LONG_CYCLE_URL, label: 'קראי עוד על מחזור ארוך' };
+      return { kind: 'topic', topic: 'long_cycle', label: 'קראי עוד על מחזור ארוך' };
 
     case 'prolonged_bleeding':
     case 'bleeding_longer_than_config':
@@ -116,7 +111,7 @@ function modeTopicFromPhysioMode(physioMode: string): EducationTopic | null {
   if (physioMode === 'postpartum') return 'postpartum';
   if (physioMode === 'breastfeeding') return 'breastfeeding';
   if (physioMode === 'stoppingPills') return 'post_ocp';
-  if (physioMode === 'perimenopause') return 'cycle_irregular';
+  if (physioMode === 'perimenopause') return 'perimenopause_cycle_changes';
   return null;
 }
 
@@ -298,11 +293,7 @@ export default function InsightsScreen() {
                 <Text style={styles.flagTitle}>{f.title}</Text>
                 <Text style={styles.line}>{f.message}</Text>
 
-                {link.kind === 'topic' ? (
-                  <LinkButton label={link.label ?? 'קראי עוד'} topic={link.topic} />
-                ) : (
-                  <ExternalLinkButton label={link.label ?? 'קראי עוד'} url={link.url} />
-                )}
+                <LinkButton label={link.label ?? 'קראי עוד'} topic={link.topic} />
               </View>
             );
           })}
@@ -358,7 +349,14 @@ const styles = StyleSheet.create({
   },
 
   card: { borderWidth: 1, borderColor: '#eee', borderRadius: 18, padding: 14, marginTop: 12, backgroundColor: '#fff' },
-  cardTitle: { fontWeight: '900', fontSize: 16, marginBottom: 10, writingDirection: 'rtl', textAlign: 'right', color: '#111' },
+  cardTitle: {
+    fontWeight: '900',
+    fontSize: 16,
+    marginBottom: 10,
+    writingDirection: 'rtl',
+    textAlign: 'right',
+    color: '#111',
+  },
 
   statusText: { fontSize: 14, fontWeight: '800', writingDirection: 'rtl', textAlign: 'right', marginBottom: 6 },
 
@@ -383,7 +381,14 @@ const styles = StyleSheet.create({
     backgroundColor: '#fafafa',
   },
   kpiLabel: { fontSize: 12, color: '#666', fontWeight: '800', writingDirection: 'rtl', textAlign: 'right' },
-  kpiValue: { marginTop: 4, fontSize: 14, fontWeight: '900', color: '#111', writingDirection: 'rtl', textAlign: 'right' },
+  kpiValue: {
+    marginTop: 4,
+    fontSize: 14,
+    fontWeight: '900',
+    color: '#111',
+    writingDirection: 'rtl',
+    textAlign: 'right',
+  },
 
   good: { color: '#137333' },
   bad: { color: '#b00020' },
@@ -400,8 +405,22 @@ const styles = StyleSheet.create({
   },
 
   flagRow: { marginBottom: 10 },
-  flagTitle: { fontSize: 14, fontWeight: '900', color: '#111', writingDirection: 'rtl', textAlign: 'right', marginBottom: 4 },
-  line: { fontSize: 13, fontWeight: '800', color: '#333', writingDirection: 'rtl', textAlign: 'right', marginBottom: 6 },
+  flagTitle: {
+    fontSize: 14,
+    fontWeight: '900',
+    color: '#111',
+    writingDirection: 'rtl',
+    textAlign: 'right',
+    marginBottom: 4,
+  },
+  line: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#333',
+    writingDirection: 'rtl',
+    textAlign: 'right',
+    marginBottom: 6,
+  },
 
   disclaimer: { marginTop: 14, fontSize: 12, color: '#666', textAlign: 'center', writingDirection: 'rtl', fontWeight: '700' },
 
