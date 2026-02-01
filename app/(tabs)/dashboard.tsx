@@ -1,6 +1,6 @@
 // app/(tabs)/dashboard.tsx
 import React, { useMemo } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useUserData } from '../../context/UserDataContext';
 import { computeCycleForecast } from '../../lib/cycleForecast';
 import { daysBetween as daysBetweenNoon, normalizeNoon } from '../../lib/date';
@@ -74,13 +74,6 @@ export default function DashboardScreen() {
     if (goal === 'prevent') return 'מניעה';
     return 'מעקב כללי';
   }, [goal]);
-
-  const handleDebugPress = () => {
-    const lp = forecast.lastPeriodStart ? formatDateIL(forecast.lastPeriodStart) : '-';
-    const ov = forecast.latestPositiveOvulation ? formatDateIL(forecast.latestPositiveOvulation.date) : '-';
-    const next = forecast.nextPeriodStart ? formatDateIL(forecast.nextPeriodStart) : '-';
-    Alert.alert('דיבוג (זמני)', `תחילת מחזור אחרון: ${lp}\nבדיקת ביוץ חיובית במחזור הנוכחי: ${ov}\nמחזור צפוי הבא: ${next}`);
-  };
 
   const tryingToConceive = goal === 'conceive';
   const preventing = goal === 'prevent';
@@ -184,10 +177,6 @@ export default function DashboardScreen() {
 
         <Pressable style={styles.primaryBtn} onPress={() => void handlePrimary()}>
           <Text style={styles.primaryBtnText}>{isPeriodActive ? 'סיים מחזור היום' : 'התחיל לי מחזור היום'}</Text>
-        </Pressable>
-
-        <Pressable style={styles.debugBtn} onPress={handleDebugPress}>
-          <Text style={styles.debugBtnText}>דיבוג</Text>
         </Pressable>
 
         <Text style={styles.disclaimer}>כל החישובים הם הערכה בלבד, ואינם תחליף לייעוץ רפואי</Text>
@@ -406,23 +395,6 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: '900',
     fontSize: 16,
-    writingDirection: 'rtl',
-  },
-
-  debugBtn: {
-    marginTop: 10,
-    borderWidth: 1,
-    borderColor: '#6a1b9a',
-    borderRadius: 12,
-    paddingVertical: 10,
-    alignItems: 'center',
-    backgroundColor: '#fff',
-  },
-
-  debugBtnText: {
-    color: '#6a1b9a',
-    fontWeight: '900',
-    fontSize: 14,
     writingDirection: 'rtl',
   },
 

@@ -9,7 +9,6 @@ import { normalizeNoon } from '../../lib/date';
 import {
     cancelDailyReminder,
     cancelPredictedPeriodReminder,
-    debugScheduledNotificationsText,
     ensureNotifPermissions,
     getDailyReminderTime,
     getPredictedPeriodReminderEnabled,
@@ -203,8 +202,6 @@ export default function SettingsScreen() {
   };
 
   const runDebug = async () => {
-    if (!__DEV__) return;
-    const txt = await debugScheduledNotificationsText();
     Alert.alert('DEBUG - Scheduled Notifications', txt);
   };
 
@@ -347,122 +344,4 @@ export default function SettingsScreen() {
 
         <Text style={styles.cardNote}>מצב מתוזמן: {predEnabled ? (predScheduled ? 'כן' : 'מופעל אבל לא מתוזמן') : 'כבוי'}</Text>
 
-        {__DEV__ && (
-          <Pressable style={[styles.btn, { marginTop: 10 }]} onPress={() => void runDebug()}>
-            <Text style={styles.btnText}>דיבוג התראות (DEV)</Text>
-          </Pressable>
-        )}
-      </View>
-
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>נתונים</Text>
-
-        <Pressable style={[styles.btn, styles.dangerBtn]} onPress={onReset}>
-          <Text style={[styles.btnText, styles.dangerText]}>איפוס נתונים</Text>
-        </Pressable>
-
-        <Text style={styles.cardNote}>מוחק מחזורים, סימפטומים, הגדרות והתראות.</Text>
-      </View>
-
-      <Text style={styles.note}>בהמשך נוסיף כאן: התראת חלון פוריות ועוד.</Text>
-    </ScrollView>
-  );
-}
-
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff', padding: 20 },
-  content: { paddingBottom: 28 },
-
-  title: {
-    fontSize: 22,
-    fontWeight: '900',
-    textAlign: 'center',
-    marginTop: 10,
-    marginBottom: 20,
-    writingDirection: 'rtl',
-  },
-
-  btn: {
-    paddingVertical: 16,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#eee',
-    alignItems: 'center',
-    marginBottom: 12,
-    backgroundColor: '#fff',
-  },
-
-  btnText: { fontSize: 16, fontWeight: '900', color: '#6a1b9a', writingDirection: 'rtl' },
-
-  smallBtn: {
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#e9ddff',
-    backgroundColor: '#fff',
-  },
-
-  smallBtnText: {
-    fontSize: 14,
-    fontWeight: '900',
-    color: '#6a1b9a',
-    writingDirection: 'rtl',
-  },
-
-  dangerBtn: {
-    borderColor: '#ffd0d9',
-    backgroundColor: '#ffe3e8',
-  },
-
-  dangerText: { color: '#b00020' },
-
-  card: { borderWidth: 1, borderColor: '#eee', borderRadius: 18, padding: 14, marginBottom: 12 },
-
-  cardTitle: {
-    fontWeight: '900',
-    fontSize: 16,
-    marginBottom: 10,
-    writingDirection: 'rtl',
-    textAlign: 'right',
-    color: '#111',
-  },
-
-  cardNote: { marginTop: 8, fontSize: 12, color: '#666', writingDirection: 'rtl', textAlign: 'right', fontWeight: '700' },
-
-  row: {
-    flexDirection: 'row-reverse',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 10,
-    borderWidth: 1,
-    borderColor: '#eee',
-    borderRadius: 16,
-    backgroundColor: '#fafafa',
-  },
-
-  rowTextWrap: { flex: 1 },
-  rowTitle: { fontWeight: '900', fontSize: 15, color: '#111', writingDirection: 'rtl', textAlign: 'right' },
-  rowSub: {
-    marginTop: 4,
-    fontSize: 12,
-    color: '#666',
-    fontWeight: '700',
-    writingDirection: 'rtl',
-    textAlign: 'right',
-    lineHeight: 16,
-  },
-
-  lockHint: {
-    marginTop: 6,
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#6a1b9a',
-    writingDirection: 'rtl',
-    textAlign: 'right',
-  },
-
-  note: { marginTop: 14, fontSize: 12, color: '#666', textAlign: 'center', writingDirection: 'rtl' },
-});
+        ;
